@@ -188,7 +188,7 @@ public Object kvreduce(IFn f, Object init){
 }
 
 public Object fold(long n, final IFn combinef, final IFn reducef,
-                   IFn fjinvoke, final IFn fjtask, final IFn fjfork, final IFn fjjoin){
+                   IFn fjinvoke, final IFn fjtask, final IFn fjfork, final IFn fjjoin) throws Exception{
 	//we are ignoring n for now
 	Callable top = new Callable(){
 		public Object call() throws Exception{
@@ -339,7 +339,7 @@ static interface INode extends Serializable {
 
     public Object kvreduce(IFn f, Object init);
 
-	Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin);
+        Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin) throws Exception;
 }
 
 final static class ArrayNode implements INode{
@@ -412,7 +412,7 @@ final static class ArrayNode implements INode{
     }
 
 	public Object fold(final IFn combinef, final IFn reducef,
-	                   final IFn fjtask, final IFn fjfork, final IFn fjjoin){
+                           final IFn fjtask, final IFn fjfork, final IFn fjjoin) throws Exception{
 		List<Callable> tasks = new ArrayList();
 		for(final INode node : array){
 			if(node != null){
@@ -428,22 +428,13 @@ final static class ArrayNode implements INode{
 		}
 
 	static public Object foldTasks(List<Callable> tasks, final IFn combinef,
-	                          final IFn fjtask, final IFn fjfork, final IFn fjjoin){
+                                  final IFn fjtask, final IFn fjfork, final IFn fjjoin) throws Exception{
 
 		if(tasks.isEmpty())
 			return combinef.invoke();
 
-		if(tasks.size() == 1){
-			Object ret = null;
-			try
-				{
-				return tasks.get(0).call();
-				}
-			catch(Exception e)
-				{
-				//aargh
-				}
-			}
+                if(tasks.size() == 1)
+                        return tasks.get(0).call();
 
 		List<Callable> t1 = tasks.subList(0,tasks.size()/2);
 		final List<Callable> t2 = tasks.subList(tasks.size()/2, tasks.size());
@@ -691,7 +682,7 @@ final static class BitmapIndexedNode implements INode{
          return NodeSeq.kvreduce(array,f,init);
     }
 
-	public Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin){
+        public Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin) throws Exception{
 		return NodeSeq.kvreduce(array, reducef, combinef.invoke());
 	}
 
@@ -883,7 +874,7 @@ final static class HashCollisionNode implements INode{
          return NodeSeq.kvreduce(array,f,init);
     }
 
-	public Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin){
+        public Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin) throws Exception{
 		return NodeSeq.kvreduce(array, reducef, combinef.invoke());
 	}
 
