@@ -61,3 +61,33 @@
 (deftest test-nil
   (is (= {:k :v} (reduce-kv assoc {:k :v} nil)))
   (is (= 0 (r/fold + nil))))
+
+(def simple-map {:a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9 :j 10
+                 :k 11 :l 12 :m 13 :n 14 :o 15 :p 16 :q 17 :r 18
+                 :s 19 :t 20 :u 21 :v 22 :w 23 :x 24 :y 25 :z 26})
+
+(declare k-fail)
+
+(defn reducef
+  ([])
+  ([ret [k v]] (reducef ret k v))
+  ([ret k v] (when (= k k-fail)
+               (throw (IndexOutOfBoundsException.)))))
+
+;; This test isn't very interesting. It demonstrates that exceptions
+;; thrown from within a reduce propagate up out of the reduce.
+(deftest test-reduce-exception
+  (doseq [k (keys simple-map)]
+    (def k-fail k)
+    (is (thrown? IndexOutOfBoundsException
+                 (reduce reducef nil simple-map)))))
+
+;; Using a checked exception, such as IllegalAccessException, causes
+;; test-fold-exception to fail. The checked exception get wrapped in
+;; a few levels of RuntimeException. Note that test-reduce-exception
+;; does not see this behavior; the base exception is not wrapped.
+(deftest test-fold-exception
+  (doseq [k (keys simple-map)]
+    (def k-fail k)
+    (is (thrown? IndexOutOfBoundsException
+                 (r/fold reducef simple-map)))))
