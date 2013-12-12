@@ -213,6 +213,7 @@ static final public Var VARS = Var.create().setDynamic();
 static final public Var METHOD = Var.create(null).setDynamic();
 
 //null or not
+static final public Var IN_TRY_BLOCK = Var.create(null).setDynamic();
 static final public Var IN_CATCH_FINALLY = Var.create(null).setDynamic();
 
 static final public Var NO_RECUR = Var.create(null).setDynamic();
@@ -340,6 +341,10 @@ interface IParser{
 
 static boolean isSpecial(Object sym){
 	return specials.containsKey(sym);
+}
+
+static boolean inTailCall(C context) {
+    return (context == C.RETURN) && (IN_TRY_BLOCK.deref() == null);
 }
 
 static Symbol resolveSymbol(Symbol sym){
@@ -953,12 +958,13 @@ static public abstract class HostExpr implements Expr, MaybePrimitiveExpr{
 				Symbol sym = (Symbol) RT.first(call);
 				Symbol tag = tagOf(form);
 				PersistentVector args = PersistentVector.EMPTY;
+                boolean tailPosition = inTailCall(context);
 				for(ISeq s = RT.next(call); s != null; s = s.next())
 					args = args.cons(analyze(context == C.EVAL ? context : C.EXPRESSION, s.first()));
 				if(c != null)
-					return new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args);
+					return new StaticMethodExpr(source, line, column, tag, c, munge(sym.name), args, tailPosition);
 				else
-					return new InstanceMethodExpr(source, line, column, tag, instance, munge(sym.name), args);
+					return new InstanceMethodExpr(source, line, column, tag, instance, munge(sym.name), args, tailPosition);
 				}
 		}
 	}
@@ -1377,13 +1383,15 @@ static class InstanceMethodExpr extends MethodExpr{
 	public final int line;
 	public final int column;
 	public final Symbol tag;
+	public final boolean tailPosition;
 	public final java.lang.reflect.Method method;
 
 	final static Method invokeInstanceMethodMethod =
 			Method.getMethod("Object invokeInstanceMethod(Object,String,Object[])");
 
 
-	public InstanceMethodExpr(String source, int line, int column, Symbol tag, Expr target, String methodName, IPersistentVector args)
+	public InstanceMethodExpr(String source, int line, int column, Symbol tag, Expr target,
+				String methodName, IPersistentVector args, boolean tailPosition)
 			{
 		this.source = source;
 		this.line = line;
@@ -1392,6 +1400,7 @@ static class InstanceMethodExpr extends MethodExpr{
 		this.methodName = methodName;
 		this.target = target;
 		this.tag = tag;
+		this.tailPosition = tailPosition;
 		if(target.hasJavaClass() && target.getJavaClass() != null)
 			{
 			List methods = Reflector.getMethods(target.getJavaClass(), args.count(), methodName, false);
@@ -1495,10 +1504,10 @@ static class InstanceMethodExpr extends MethodExpr{
 			//if(!method.getDeclaringClass().isInterface())
 			gen.checkCast(type);
 			MethodExpr.emitTypedArgs(objx, gen, method.getParameterTypes(), args);
-			if(context == C.RETURN)
+			if(tailPosition)
 				{
 				ObjMethod method = (ObjMethod) METHOD.deref();
-				method.emitClearLocals(gen);
+				method.emitClearThis(gen);
 				}
 			Method m = new Method(methodName, Type.getReturnType(method), Type.getArgumentTypes(method));
 			if(method.getDeclaringClass().isInterface())
@@ -1544,12 +1553,14 @@ static class StaticMethodExpr extends MethodExpr{
 	public final int column;
 	public final java.lang.reflect.Method method;
 	public final Symbol tag;
+	public final boolean tailPosition;
 	final static Method forNameMethod = Method.getMethod("Class forName(String)");
 	final static Method invokeStaticMethodMethod =
 			Method.getMethod("Object invokeStaticMethod(Class,String,Object[])");
 
 
-	public StaticMethodExpr(String source, int line, int column, Symbol tag, Class c, String methodName, IPersistentVector args)
+	public StaticMethodExpr(String source, int line, int column, Symbol tag, Class c,
+							String methodName, IPersistentVector args, boolean tailPosition)
 			{
 		this.c = c;
 		this.methodName = methodName;
@@ -1558,6 +1569,7 @@ static class StaticMethodExpr extends MethodExpr{
 		this.line = line;
 		this.column = column;
 		this.tag = tag;
+		this.tailPosition = tailPosition;
 
 		List methods = Reflector.getMethods(c, args.count(), methodName, true);
 		if(methods.isEmpty())
@@ -1674,10 +1686,10 @@ static class StaticMethodExpr extends MethodExpr{
 			{
 			MethodExpr.emitTypedArgs(objx, gen, method.getParameterTypes(), args);
 			//Type type = Type.getObjectType(className.replace('.', '/'));
-			if(context == C.RETURN)
+			if(tailPosition)
 				{
 				ObjMethod method = (ObjMethod) METHOD.deref();
-				method.emitClearLocals(gen);
+				method.emitClearThis(gen);
 				}
 			Type type = Type.getType(c);
 			Method m = new Method(methodName, Type.getReturnType(method), Type.getArgumentTypes(method));
@@ -2152,13 +2164,14 @@ public static class TryExpr implements Expr{
 					}
 				else
 					{
-                                            if(bodyExpr == null)
-                                                try {
-                                                    Var.pushThreadBindings(RT.map(NO_RECUR, true));
-						                            bodyExpr = (new BodyExpr.Parser()).parse(context, RT.seq(body));
-                                                } finally {
-                                                    Var.popThreadBindings();
-                                                }
+					if(bodyExpr == null)
+						try {
+							Var.pushThreadBindings(RT.map(NO_RECUR, true, IN_TRY_BLOCK, RT.T));
+							bodyExpr = (new BodyExpr.Parser()).parse(context, RT.seq(body));
+						} finally {
+							Var.popThreadBindings();
+						}
+
 					if(Util.equals(op, CATCH))
 						{
 						Class c = HostExpr.maybeClass(RT.second(f), false);
@@ -2209,9 +2222,9 @@ public static class TryExpr implements Expr{
                         if(bodyExpr == null) {
                             try 
                                 {
-                                    Var.pushThreadBindings(RT.map(NO_RECUR, true));
-				    bodyExpr = (new BodyExpr.Parser()).parse(C.EXPRESSION, RT.seq(body));
-                                } 
+                                    Var.pushThreadBindings(RT.map(NO_RECUR, true, IN_TRY_BLOCK, true));
+                                    bodyExpr = (new BodyExpr.Parser()).parse(C.EXPRESSION, RT.seq(body));
+                                }
                             finally
                                 {
                                     Var.popThreadBindings();
@@ -2454,11 +2467,6 @@ public static class NewExpr implements Expr{
 			gen.newInstance(type);
 			gen.dup();
 			MethodExpr.emitTypedArgs(objx, gen, ctor.getParameterTypes(), args);
-			if(context == C.RETURN)
-				{
-				ObjMethod method = (ObjMethod) METHOD.deref();
-				method.emitClearLocals(gen);
-				}
 			gen.invokeConstructor(type, new Method("<init>", Type.getConstructorDescriptor(ctor)));
 			}
 		else
@@ -2466,11 +2474,6 @@ public static class NewExpr implements Expr{
 			gen.push(destubClassName(c.getName()));
 			gen.invokeStatic(CLASS_TYPE, forNameMethod);
 			MethodExpr.emitArgsAsArray(args, objx, gen);
-			if(context == C.RETURN)
-				{
-				ObjMethod method = (ObjMethod) METHOD.deref();
-				method.emitClearLocals(gen);
-				}
 			gen.invokeStatic(REFLECTOR_TYPE, invokeConstructorMethod);
 			}
 		if(context == C.STATEMENT)
@@ -3433,6 +3436,7 @@ static class InvokeExpr implements Expr{
 	public final IPersistentVector args;
 	public final int line;
 	public final int column;
+	public final boolean tailPosition;
 	public final String source;
 	public boolean isProtocol = false;
 	public boolean isDirect = false;
@@ -3442,12 +3446,14 @@ static class InvokeExpr implements Expr{
 	static Keyword onKey = Keyword.intern("on");
 	static Keyword methodMapKey = Keyword.intern("method-map");
 
-	public InvokeExpr(String source, int line, int column, Symbol tag, Expr fexpr, IPersistentVector args) {
+	public InvokeExpr(String source, int line, int column, Symbol tag, Expr fexpr, IPersistentVector args, boolean tailPosition) {
 		this.source = source;
 		this.fexpr = fexpr;
 		this.args = args;
 		this.line = line;
 		this.column = column;
+		this.tailPosition = tailPosition;
+
 		if(fexpr instanceof VarExpr)
 			{
 			Var fvar = ((VarExpr)fexpr).var;
@@ -3597,10 +3603,10 @@ static class InvokeExpr implements Expr{
 			MethodExpr.emitArgsAsArray(restArgs, objx, gen);
 			}
 
-		if(context == C.RETURN)
+		if(tailPosition)
 			{
-			ObjMethod method = (ObjMethod) METHOD.deref();
-			method.emitClearLocals(gen);
+                ObjMethod method = (ObjMethod) METHOD.deref();
+                method.emitClearThis(gen);
 			}
 
 		gen.invokeInterface(IFN_TYPE, new Method("invoke", OBJECT_TYPE, ARG_TYPES[Math.min(MAX_POSITIONAL_ARITY + 1,
@@ -3616,6 +3622,7 @@ static class InvokeExpr implements Expr{
 	}
 
 	static public Expr parse(C context, ISeq form) {
+		boolean tailPosition = inTailCall(context);
 		if(context != C.EVAL)
 			context = C.EXPRESSION;
 		Expr fexpr = analyze(context, form.first());
@@ -3678,7 +3685,7 @@ static class InvokeExpr implements Expr{
 //			throw new IllegalArgumentException(
 //					String.format("No more than %d args supported", MAX_POSITIONAL_ARITY));
 
-		return new InvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form), fexpr, args);
+		return new InvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form), fexpr, args, tailPosition);
 	}
 }
 
@@ -5583,6 +5590,11 @@ abstract public static class ObjMethod{
 				}
 			}
 	}
+
+	void emitClearThis(GeneratorAdapter gen) {
+		gen.visitInsn(Opcodes.ACONST_NULL);
+		gen.visitVarInsn(Opcodes.ASTORE, 0);
+	}
 }
 
 public static class LocalBinding{
@@ -6005,14 +6017,14 @@ public static class LetExpr implements Expr, MaybePrimitiveExpr{
 							{
 							if(recurMismatches != null && RT.booleanCast(recurMismatches.nth(i/2)))
 								{
-								init = new StaticMethodExpr("", 0, 0, null, RT.class, "box", RT.vector(init));
+								init = new StaticMethodExpr("", 0, 0, null, RT.class, "box", RT.vector(init), false);
 								if(RT.booleanCast(RT.WARN_ON_REFLECTION.deref()))
 									RT.errPrintWriter().println("Auto-boxing loop arg: " + sym);
 								}
 							else if(maybePrimitiveType(init) == int.class)
-								init = new StaticMethodExpr("", 0, 0, null, RT.class, "longCast", RT.vector(init));
+								init = new StaticMethodExpr("", 0, 0, null, RT.class, "longCast", RT.vector(init), false);
 							else if(maybePrimitiveType(init) == float.class)
-								init = new StaticMethodExpr("", 0, 0, null, RT.class, "doubleCast", RT.vector(init));
+								init = new StaticMethodExpr("", 0, 0, null, RT.class, "doubleCast", RT.vector(init), false);
 							}
 						//sequential enhancement of env (like Lisp let*)
 						LocalBinding lb = registerLocal(sym, tagOf(sym), init,false);
