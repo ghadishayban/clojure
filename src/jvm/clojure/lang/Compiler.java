@@ -2220,15 +2220,18 @@ public static class TryExpr implements Expr{
 					}
 				}
                         if(bodyExpr == null) {
+                            // this codepath is hit when there is neither catch or finally, e.g. (try (expr))
+                            // return a body expr directly
                             try 
                                 {
-                                    Var.pushThreadBindings(RT.map(NO_RECUR, true, IN_TRY_BLOCK, true));
-                                    bodyExpr = (new BodyExpr.Parser()).parse(C.EXPRESSION, RT.seq(body));
+                                                                        Var.pushThreadBindings(RT.map(NO_RECUR, true));
+                                                                        bodyExpr = (new BodyExpr.Parser()).parse(context, RT.seq(body));
                                 }
                             finally
                                 {
                                     Var.popThreadBindings();
                                 }
+                            return bodyExpr;
                         }
 
 			return new TryExpr(bodyExpr, catches, finallyExpr, retLocal,
