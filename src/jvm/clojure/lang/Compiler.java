@@ -4268,6 +4268,7 @@ static public class ObjExpr implements Expr{
 				int access = isVolatile(lb) ? ACC_VOLATILE :
 				             isMutable(lb) ? 0 :
 				             (ACC_PUBLIC + ACC_FINAL);
+                        access += isTransient(lb) ? ACC_TRANSIENT : 0;
 				FieldVisitor fv;
 				if(lb.getPrimitiveType() != null)
 					fv = cv.visitField(access
@@ -4775,6 +4776,12 @@ static public class ObjExpr implements Expr{
 		return RT.booleanCast(RT.contains(fields, lb.sym)) &&
 		       RT.booleanCast(RT.get(lb.sym.meta(), Keyword.intern("volatile-mutable")));
 	}
+
+        boolean isTransient(LocalBinding lb){
+                return RT.booleanCast(RT.contains(fields, lb.sym)) &&
+                                RT.booleanCast(RT.get(lb.sym.meta(), Keyword.intern("transient")));
+        }
+
 
 	boolean isDeftype(){
 		return fields != null;
