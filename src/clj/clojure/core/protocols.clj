@@ -45,7 +45,22 @@
   (coll-reduce
    ([coll f] (.reduce coll f))
    ([coll f val] (.reduce coll f val)))
-  
+
+  clojure.lang.Repeat
+  (coll-reduce
+   ([coll f] (.reduce ^clojure.lang.IReduce coll f))
+   ([coll f val] (.reduce ^clojure.lang.IReduce coll f val)))
+
+  clojure.lang.Cycle
+  (coll-reduce
+   ([coll f] (.reduce ^clojure.lang.IReduce coll f))
+   ([coll f val] (.reduce ^clojure.lang.IReduce coll f val)))
+
+  clojure.lang.Iterate
+  (coll-reduce
+   ([coll f] (.reduce ^clojure.lang.IReduce coll f))
+   ([coll f val] (.reduce ^clojure.lang.IReduce coll f val)))
+
   ;;aseqs are iterable, masking internal-reducers
   clojure.lang.ASeq
   (coll-reduce
