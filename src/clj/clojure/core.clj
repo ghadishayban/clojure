@@ -2876,31 +2876,23 @@
    :static true}
   [f x] (cons x (lazy-seq (iterate f (f x)))))
 
-(defn range
-  "Returns a lazy seq of nums from start (inclusive) to end
-  (exclusive), by step, where start defaults to 0, step to 1, and end to
-  infinity. When step is equal to 0, returns an infinite sequence of
-  start. When start is equal to end, returns empty list."
-  {:added "1.0"
-   :static true}
-  ([] (range 0 Double/POSITIVE_INFINITY 1))
-  ([end] (range 0 end 1))
-  ([start end] (range start end 1))
+(defn ^:private range*
+  ;; only handle ascending or descending ranges
+  ([end] (range* 0 end 1))
+  ([start end] (range* start end 1))
   ([start end step]
    (lazy-seq
     (let [b (chunk-buffer 32)
-          comp (cond (or (zero? step) (= start end)) not=
-                     (pos? step) <
-                     (neg? step) >)]
+          comp (if (pos? step) #(< % end) #(> % end))]
       (loop [i start]
         (if (and (< (count b) 32)
-                 (comp i end))
+                 (comp i))
           (do
             (chunk-append b i)
             (recur (+ i step)))
-          (chunk-cons (chunk b) 
-                      (when (comp i end) 
-                        (range i end step)))))))))
+          (chunk-cons (chunk b)
+                      (when (comp i)
+                        (range* i end step)))))))))
 
 (defn merge
   "Returns a map that consists of the rest of the maps conj-ed onto
@@ -4826,7 +4818,7 @@
                   (if-let [e (find smap (nth v i))]
                     (assoc v i (val e))
                     v))
-                coll (range (count coll)))
+                coll (range* 0 (count coll)))
        (map #(if-let [e (find smap %)] (val e) %) coll))))
 
 (defmacro dosync
@@ -5454,7 +5446,7 @@
   {:added "1.0"}
   [^java.sql.ResultSet rs]
     (let [rsmeta (. rs (getMetaData))
-          idxs (range 1 (inc (. rsmeta (getColumnCount))))
+          idxs (range* 1 (inc (. rsmeta (getColumnCount))))
           keys (map (comp keyword #(.toLowerCase ^String %))
                     (map (fn [i] (. rsmeta (getColumnLabel i))) idxs))
           check-keys
@@ -6300,8 +6292,8 @@
   (first
     (filter (fn [[s m]]
               (apply distinct? (map #(shift-mask s m %) hashes)))
-            (for [mask (map #(dec (bit-shift-left 1 %)) (range 1 (inc max-mask-bits)))
-                  shift (range 0 31)]
+            (for [mask (map #(dec (bit-shift-left 1 %)) (range* 1 (inc max-mask-bits)))
+                  shift (range* 0 31)]
               [shift mask]))))
 
 (defn- case-map
@@ -6612,6 +6604,30 @@
               (transient [])
               coll)
       persistent!))
+
+(load "core_range")
+
+(defn range
+  "Returns a lazy seq of nums from start (inclusive) to end
+  (exclusive), by step, where start defaults to 0, step to 1, and end to
+  infinity. When step is equal to 0, returns an infinite sequence of
+  start. When start is equal to end, returns empty list."
+  {:added "1.0"
+   :static true}
+  ([]
+   (iterate inc' 0))
+  ([end]
+   (if (instance? Long end)
+     (long-range end)
+     (generic-range end)))
+  ([start end]
+   (if (and (instance? Long start) (instance? Long end))
+     (long-range start end)
+     (generic-range start end)))
+  ([start end step]
+   (if (and (instance? Long start) (instance? Long end) (instance? Long step))
+     (long-range start end step)
+     (generic-range start end step))))
 
 (require '[clojure.java.io :as jio])
 

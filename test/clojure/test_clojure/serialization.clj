@@ -107,12 +107,12 @@
     (seq (make-array Long/TYPE 10))
 
     ; "records"
-    (SerializationRecord. 0 :foo (range 20))
-    (struct SerializationStruct 0 :foo (range 20))
+    (SerializationRecord. 0 :foo (seq (range 20)))
+    (struct SerializationStruct 0 :foo (seq (range 20)))
 
     ; misc seqs
     (seq "s11n")
-    (range 50)
+    (seq (range 50))
     (rseq (apply sorted-set (reverse (range 100))))))
 
 (deftest misc-serialization
@@ -165,5 +165,5 @@
     #'+
 
     ;; stateful seqs
-    (enumeration-seq (java.util.Collections/enumeration (range 50)))
+    (enumeration-seq (java.util.Collections/enumeration (seq (range 50))))
     (iterator-seq (.iterator (range 50)))))
