@@ -113,6 +113,7 @@
     ; misc seqs
     (seq "s11n")
     (range 50)
+    (nthrest (range 50) 5)
     (rseq (apply sorted-set (reverse (range 100))))))
 
 (deftest misc-serialization
@@ -165,5 +166,5 @@
     #'+
 
     ;; stateful seqs
-    (enumeration-seq (java.util.Collections/enumeration (range 50)))
-    (iterator-seq (.iterator (range 50)))))
+    (enumeration-seq (java.util.Collections/enumeration (seq (range 50))))
+    (iterator-seq (.iterator (seq (range 50))))))

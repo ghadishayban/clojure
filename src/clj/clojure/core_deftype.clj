@@ -268,7 +268,7 @@
           `(if (= (count ~'overage) ~over-count)
              (new ~classname
                   ~@field-args
-                  ~@(for [i (range 0 (count over))]
+                  ~@(for [i (range* 0 (count over))]
                       (list `nth 'overage i)))
              (throw (clojure.lang.ArityException. (+ ~arg-count (count ~'overage)) (name '~fn-name))))
           `(new ~classname ~@field-args)))))
