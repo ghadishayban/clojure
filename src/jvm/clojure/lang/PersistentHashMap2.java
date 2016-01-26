@@ -397,7 +397,7 @@ static interface INode extends Serializable {
     // returns the result of (f [k v]) for each iterated element
     Iterator iterator(IFn f);
 
-	byte sizePredicate();
+	byte sizePredicate(); // helper to avoid instanceof when compacting upon deletion
 }
 
 final static class BitmapIndexedNode implements INode{
