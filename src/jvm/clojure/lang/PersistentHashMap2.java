@@ -31,11 +31,9 @@ public class PersistentHashMap2 extends APersistentMap implements IEditableColle
 
 final int count;
 final INode root;
-final boolean hasNull;
-final Object nullValue;
 final IPersistentMap _meta;
 
-final public static PersistentHashMap2 EMPTY = new PersistentHashMap2(0, null, false, null);
+final public static PersistentHashMap2 EMPTY = new PersistentHashMap2(0, null);
 final private static Object NOT_FOUND = new Object();
 
 static public IPersistentMap create(Map other){
@@ -102,20 +100,16 @@ public static PersistentHashMap2 create(IPersistentMap meta, Object... init){
 	return create(init).withMeta(meta);
 }
 
-PersistentHashMap2(int count, INode root, boolean hasNull, Object nullValue){
+PersistentHashMap2(int count, INode root){
 	this.count = count;
 	this.root = root;
-	this.hasNull = hasNull;
-	this.nullValue = nullValue;
 	this._meta = null;
 }
 
-public PersistentHashMap2(IPersistentMap meta, int count, INode root, boolean hasNull, Object nullValue){
+public PersistentHashMap2(IPersistentMap meta, int count, INode root){
 	this._meta = meta;
 	this.count = count;
 	this.root = root;
-	this.hasNull = hasNull;
-	this.nullValue = nullValue;
 }
 
 static int hash(Object k){
@@ -123,34 +117,23 @@ static int hash(Object k){
 }
 
 public boolean containsKey(Object key){
-	if(key == null)
-		return hasNull;
 	return (root != null) ? root.find(0, hash(key), key, NOT_FOUND) != NOT_FOUND : false;
 }
 
 public IMapEntry entryAt(Object key){
-	if(key == null)
-		return hasNull ? (IMapEntry) MapEntry.create(null, nullValue) : null;
 	return (root != null) ? root.find(0, hash(key), key) : null;
 }
 
 public IPersistentMap assoc(Object key, Object val){
-	if(key == null) {
-		if(hasNull && val == nullValue)
-			return this;
-		return new PersistentHashMap2(meta(), hasNull ? count : count + 1, root, true, val);
-	}
 	Box addedLeaf = new Box(null);
 	INode newroot = (root == null ? BitmapIndexedNode.EMPTY : root) 
 			.assoc(0, hash(key), key, val, addedLeaf);
 	if(newroot == root)
 		return this;
-	return new PersistentHashMap2(meta(), addedLeaf.val == null ? count : count + 1, newroot, hasNull, nullValue);
+	return new PersistentHashMap2(meta(), addedLeaf.val == null ? count : count + 1, newroot);
 }
 
 public Object valAt(Object key, Object notFound){
-	if(key == null)
-		return hasNull ? nullValue : notFound;
 	return root != null ? root.find(0, hash(key), key, notFound) : notFound;
 }
 
@@ -165,14 +148,12 @@ public IPersistentMap assocEx(Object key, Object val) {
 }
 
 public IPersistentMap without(Object key){
-	if(key == null)
-		return hasNull ? new PersistentHashMap2(meta(), count - 1, root, false, null) : this;
 	if(root == null)
 		return this;
-	INode newroot = root.without(0, hash(key), key);
+	INode newroot = root.without(0, hash(key), key, new Box(null));
 	if(newroot == root)
 		return this;
-	return new PersistentHashMap2(meta(), count - 1, newroot, hasNull, nullValue);
+	return new PersistentHashMap2(meta(), count - 1, newroot);
 }
 
 static final Iterator EMPTY_ITER = new Iterator(){
@@ -190,32 +171,7 @@ static final Iterator EMPTY_ITER = new Iterator(){
 };
 
 private Iterator iterator(final IFn f){
-    final Iterator rootIter = (root == null) ? EMPTY_ITER : root.iterator(f);
-    if(hasNull) {
-        return new Iterator() {
-            private boolean seen = false;
-            public boolean hasNext() {
-                if (!seen)
-                    return true;
-                else
-                    return rootIter.hasNext();
-            }
-
-            public Object next(){
-                if (!seen) {
-                    seen = true;
-                    return f.invoke(null, nullValue);
-                } else
-                    return rootIter.next();
-            }
-
-            public void remove(){
-                throw new UnsupportedOperationException();
-            }
-        };
-    }
-    else
-        return rootIter;
+    return (root == null) ? EMPTY_ITER : root.iterator(f);
 }
 
 public Iterator iterator(){
@@ -231,9 +187,6 @@ public Iterator valIterator(){
 }
 
 public Object kvreduce(IFn f, Object init){
-    init = hasNull?f.invoke(init,null,nullValue):init;
-	if(RT.isReduced(init))
-		return ((IDeref)init).deref();
 	if(root != null){
 		init = root.kvreduce(f,init);
 		if(RT.isReduced(init))
@@ -251,10 +204,7 @@ public Object fold(long n, final IFn combinef, final IFn reducef,
 		public Object call() throws Exception{
 			Object ret = combinef.invoke();
 			if(root != null)
-				ret = combinef.invoke(ret, root.fold(combinef,reducef,fjtask,fjfork,fjjoin));
-			return hasNull?
-			       combinef.invoke(ret,reducef.invoke(combinef.invoke(),null,nullValue))
-			       :ret;
+				return combinef.invoke(ret, root.fold(combinef,reducef,fjtask,fjfork,fjjoin));
 		}
 	};
 	return fjinvoke.invoke(top);
@@ -265,8 +215,7 @@ public int count(){
 }
 
 public ISeq seq(){
-	ISeq s = root != null ? root.nodeSeq() : null; 
-	return hasNull ? new Cons(MapEntry.create(null, nullValue), s) : s;
+	return root != null ? root.nodeSeq() : null;
 }
 
 public IPersistentCollection empty(){
@@ -279,7 +228,7 @@ static int mask(int hash, int shift){
 }
 
 public PersistentHashMap2 withMeta(IPersistentMap meta){
-	return new PersistentHashMap2(meta, count, root, hasNull, nullValue);
+	return new PersistentHashMap2(meta, count, root);
 }
 
 public TransientHashMap asTransient() {
@@ -294,33 +243,20 @@ static final class TransientHashMap extends ATransientMap {
 	final AtomicReference<Thread> edit;
 	volatile INode root;
 	volatile int count;
-	volatile boolean hasNull;
-	volatile Object nullValue;
 	final Box leafFlag = new Box(null);
 
 
 	TransientHashMap(PersistentHashMap2 m) {
-		this(new AtomicReference<Thread>(Thread.currentThread()), m.root, m.count, m.hasNull, m.nullValue);
+		this(new AtomicReference<Thread>(Thread.currentThread()), m.root, m.count);
 	}
 	
-	TransientHashMap(AtomicReference<Thread> edit, INode root, int count, boolean hasNull, Object nullValue) {
+	TransientHashMap(AtomicReference<Thread> edit, INode root, int count) {
 		this.edit = edit;
 		this.root = root; 
 		this.count = count; 
-		this.hasNull = hasNull;
-		this.nullValue = nullValue;
 	}
 
 	ITransientMap doAssoc(Object key, Object val) {
-		if (key == null) {
-			if (this.nullValue != val)
-				this.nullValue = val;
-			if (!hasNull) {
-				this.count++;
-				this.hasNull = true;
-			}
-			return this;
-		}
 //		Box leafFlag = new Box(null);
 		leafFlag.val = null;
 		INode n = (root == null ? BitmapIndexedNode.EMPTY : root)
@@ -332,13 +268,6 @@ static final class TransientHashMap extends ATransientMap {
 	}
 
 	ITransientMap doWithout(Object key) {
-		if (key == null) {
-			if (!hasNull) return this;
-			hasNull = false;
-			nullValue = null;
-			this.count--;
-			return this;
-		}
 		if (root == null) return this;
 //		Box leafFlag = new Box(null);
 		leafFlag.val = null;
@@ -351,15 +280,10 @@ static final class TransientHashMap extends ATransientMap {
 
 	IPersistentMap doPersistent() {
 		edit.set(null);
-		return new PersistentHashMap2(count, root, hasNull, nullValue);
+		return new PersistentHashMap2(count, root);
 	}
 
 	Object doValAt(Object key, Object notFound) {
-		if (key == null)
-			if (hasNull)
-				return nullValue;
-			else
-				return notFound;
 		if (root == null)
 			return notFound;
 		return root.find(0, hash(key), key, notFound);
