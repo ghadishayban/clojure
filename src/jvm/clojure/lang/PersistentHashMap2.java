@@ -10,7 +10,6 @@
 
 package clojure.lang;
 
-import java.io.ObjectInput;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.Callable;
@@ -116,7 +115,7 @@ static int hash(Object k){
 }
 
 public boolean containsKey(Object key){
-	return (root != null) ? root.find(0, hash(key), key, NOT_FOUND) != NOT_FOUND : false;
+	return (root != null) && root.find(0, hash(key), key, NOT_FOUND) != NOT_FOUND;
 }
 
 public IMapEntry entryAt(Object key){
@@ -299,7 +298,7 @@ static final class TransientHashMap extends ATransientMap {
 	}
 }
 
-static interface INode extends Serializable {
+interface INode extends Serializable {
 	INode assoc(int shift, int hash, Object key, Object val, Box addedLeaf);
 
 	INode without(int shift, int hash, Object key, Box removedLeaf);
@@ -314,7 +313,7 @@ static interface INode extends Serializable {
 
 	INode without(AtomicReference<Thread> edit, int shift, int hash, Object key, Box removedLeaf);
 
-    public Object kvreduce(IFn f, Object init);
+    Object kvreduce(IFn f, Object init);
 
 	Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin);
 
@@ -335,7 +334,7 @@ final static class BitmapIndexedNode implements INode{
 	Object[] array;
 	final AtomicReference<Thread> edit;
 
-	final static int index(int bitmap, int bit){
+	static int index(int bitmap, int bit){
 		return Integer.bitCount(bitmap & (bit - 1));
 	}
 
@@ -370,8 +369,8 @@ final static class BitmapIndexedNode implements INode{
 			// copy 'src' and remove 1 element(s) at position 'idxOld' and
 			// insert 2 element(s) at position 'idxNew' (TODO: carefully test)
 			System.arraycopy(src, 0, dst, 0, idxNew);
-			dst[idxNew + 0] = node.getKey(0);
-			dst[idxNew + 1] = node.getValue(0);
+			dst[idxNew] = node.getKey(0);
+			dst[idxNew+1] = node.getValue(0);
 			System.arraycopy(src, idxNew, dst, idxNew + 2, idxOld - idxNew);
 			System.arraycopy(src, idxOld + 1, dst, idxOld + 2, src.length - idxOld - 1);
 
