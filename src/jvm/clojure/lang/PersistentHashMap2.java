@@ -10,7 +10,6 @@
 
 package clojure.lang;
 
-import java.io.InterruptedIOException;
 import java.io.ObjectInput;
 import java.io.Serializable;
 import java.util.*;
@@ -203,8 +202,9 @@ public Object fold(long n, final IFn combinef, final IFn reducef,
 	Callable top = new Callable(){
 		public Object call() throws Exception{
 			Object ret = combinef.invoke();
-			if(root != null)
-				return combinef.invoke(ret, root.fold(combinef,reducef,fjtask,fjfork,fjjoin));
+			return (root != null) ?
+				combinef.invoke(ret, root.fold(combinef,reducef,fjtask,fjfork,fjjoin))
+					: null;
 		}
 	};
 	return fjinvoke.invoke(top);
@@ -321,6 +321,9 @@ static interface INode extends Serializable {
     // returns the result of (f [k v]) for each iterated element
     Iterator iterator(IFn f);
 
+	Object getKey(int idx);
+    Object getValue(int idx);
+
 	byte sizePredicate(); // helper to avoid instanceof when compacting upon deletion
 }
 
@@ -343,12 +346,62 @@ final static class BitmapIndexedNode implements INode{
 		this.edit = edit;
 	}
 
-	private Object[] migrateKVDown(Object[] arr, int bit, INode node) {
+	// this removes a K+V, then adds the INode, net loss 1
+	private Object[] copyKVasNode(int bit, INode node) {
+		int oldKeyIdx = index(datamap, bit)*2;
+		int newNodeIdx = array.length - 2 - index(nodemap, bit);
+
+		Object[] dst = new Object[array.length-1];
+		System.arraycopy(array, 0, dst, 0, oldKeyIdx);
+		System.arraycopy(array, oldKeyIdx + 2, dst, oldKeyIdx, newNodeIdx - oldKeyIdx);
+		dst[newNodeIdx] = node;
+		System.arraycopy(array, newNodeIdx + 2, dst, newNodeIdx + 1, array.length - newNodeIdx - 2);
+
+		return dst;
+	}
+
+	private INode inlineSingleEntryNode(int bit, INode node) {
+			final Object[] src = this.array;
+			final Object[] dst = new Object[src.length + 1];
+
+			int idxOld = src.length - 1 - index(nodemap, bit);
+		    int idxNew = index(datamap, bit) * 2;
+
+			// copy 'src' and remove 1 element(s) at position 'idxOld' and
+			// insert 2 element(s) at position 'idxNew' (TODO: carefully test)
+			System.arraycopy(src, 0, dst, 0, idxNew);
+			dst[idxNew + 0] = node.getKey(0);
+			dst[idxNew + 1] = node.getValue(0);
+			System.arraycopy(src, idxNew, dst, idxNew + 2, idxOld - idxNew);
+			System.arraycopy(src, idxOld + 1, dst, idxOld + 2, src.length - idxOld - 1);
+
+			return new BitmapIndexedNode(edit, datamap | bit, nodemap ^ bit, dst);
 
 	}
 
 	private INode growKV(int bit, Object key, Object val) {
+		Object[] src = array;
+		Object[] dst = new Object[src.length + 2];
+		int newIdx = index(datamap, bit)*2;
 
+		System.arraycopy(src, 0, dst, 0, newIdx);
+		dst[newIdx] = key;
+		dst[newIdx+1] = val;
+		System.arraycopy(src, newIdx, dst, newIdx + 2, src.length - newIdx);
+
+		return new BitmapIndexedNode(edit, datamap | bit, nodemap, dst);
+	}
+
+	private INode copyAndRemoveValue(int bit) {
+		Object[] src = array;
+		Object[] dst = new Object[src.length];
+
+		int itemIdx = index(datamap, bit) * 2;
+
+		System.arraycopy(src, 0, dst, 0, itemIdx);
+		System.arraycopy(src, itemIdx + 2, dst, itemIdx, src.length - 2 - itemIdx);
+
+		return new BitmapIndexedNode(edit, datamap ^ bit, nodemap, dst);
 	}
 
 	public byte sizePredicate() {
@@ -377,7 +430,8 @@ final static class BitmapIndexedNode implements INode{
 			} else {
 				addedLeaf.val = addedLeaf;
 				// push the found kv down a node
-				return new BitmapIndexedNode(null, , , migrateKVDown(array, bit, createNode(shift + 5, foundKey, foundVal, hash, key, val)));
+				INode joinedNode = createNode(shift + 5, foundKey, foundVal, hash, key, val);
+				return new BitmapIndexedNode(null, datamap ^ bit, nodemap | bit, copyKVasNode(bit, joinedNode));
 			}
 		}
 		if ((nodemap & bit) != 0) {
@@ -432,10 +486,14 @@ final static class BitmapIndexedNode implements INode{
 						return subnodeNew;
 					} else {
 						// inline value (move to front)
-						return migrateFromNodeToInline(bit, subnodeNew);
+						return inlineSingleEntryNode(bit, subnodeNew);
 					}
 				}
-				case 2: return copyAndSetNode(bit, subnodeNew);
+				case 2: {
+					return new BitmapIndexedNode(edit, datamap, nodemap,
+							cloneAndSet(array, array.length - 1 - index(nodemap, bit), subnodeNew)
+					);
+				}
 			}
 
 		}
@@ -493,43 +551,59 @@ final static class BitmapIndexedNode implements INode{
 	}
 
 	private BitmapIndexedNode ensureEditable(AtomicReference<Thread> edit){
-		if(this.edit == edit)
-			return this;
-		int n = Integer.bitCount(bitmap);
-		Object[] newArray = new Object[n >= 0 ? 2*(n+1) : 4]; // make room for next assoc
-		System.arraycopy(array, 0, newArray, 0, 2*n);
-		return new BitmapIndexedNode(edit, bitmap, newArray);
+		return null;
+//		if(this.edit == edit)
+//			return this;
+//		int n = Integer.bitCount(bitmap);
+//		Object[] newArray = new Object[n >= 0 ? 2*(n+1) : 4]; // make room for next assoc
+//		System.arraycopy(array, 0, newArray, 0, 2*n);
+//		return new BitmapIndexedNode(edit, bitmap, newArray);
+
 	}
 	
 	private BitmapIndexedNode editAndSet(AtomicReference<Thread> edit, int i, Object a) {
-		BitmapIndexedNode editable = ensureEditable(edit);
-		editable.array[i] = a;
-		return editable;
+		return null;
+//		BitmapIndexedNode editable = ensureEditable(edit);
+//		editable.array[i] = a;
+//		return editable;
 	}
 
 	private BitmapIndexedNode editAndSet(AtomicReference<Thread> edit, int i, Object a, int j, Object b) {
-		BitmapIndexedNode editable = ensureEditable(edit);
-		editable.array[i] = a;
-		editable.array[j] = b;
-		return editable;
+		return null;
+//		BitmapIndexedNode editable = ensureEditable(edit);
+//		editable.array[i] = a;
+//		editable.array[j] = b;
+//		return editable;
 	}
 
 	private BitmapIndexedNode editAndRemovePair(AtomicReference<Thread> edit, int bit, int i) {
-		if (bitmap == bit) 
-			return null;
-		BitmapIndexedNode editable = ensureEditable(edit);
-		editable.bitmap ^= bit;
-		System.arraycopy(editable.array, 2*(i+1), editable.array, 2*i, editable.array.length - 2*(i+1));
-		editable.array[editable.array.length - 2] = null;
-		editable.array[editable.array.length - 1] = null;
-		return editable;
+		return null;
+//		if (bitmap == bit)
+//			return null;
+//		BitmapIndexedNode editable = ensureEditable(edit);
+//		editable.bitmap ^= bit;
+//		System.arraycopy(editable.array, 2*(i+1), editable.array, 2*i, editable.array.length - 2*(i+1));
+//		editable.array[editable.array.length - 2] = null;
+//		editable.array[editable.array.length - 1] = null;
+//		return editable;
 	}
 
 	public INode assoc(AtomicReference<Thread> edit, int shift, int hash, Object key, Object val, Box addedLeaf){
+		return null;
 	}
 
 	public INode without(AtomicReference<Thread> edit, int shift, int hash, Object key, Box removedLeaf) {
+		return null;
 	}
+
+	public Object getKey(int idx) {
+		return array[2*idx];
+	}
+
+	public Object getValue(int idx) {
+		return array[2*idx+1];
+	}
+
 }
 
 final static class HashCollisionNode implements INode{
@@ -562,11 +636,12 @@ final static class HashCollisionNode implements INode{
 			return new HashCollisionNode(edit, hash, count + 1, newArray);
 		}
 		// nest it in a bitmap node
-		return new BitmapIndexedNode(null, bitpos(this.hash, shift), new Object[] {null, this})
+		return new BitmapIndexedNode(null, 0, bitpos(this.hash, shift) , new Object[] {this})
 			.assoc(shift, hash, key, val, addedLeaf);
 	}
 
-	public INode without(int shift, int hash, Object key){
+	// TODO
+	public INode without(int shift, int hash, Object key, Box removedLeaf){
 		int idx = findIndex(key);
 		if(idx == -1)
 			return this;
@@ -671,7 +746,7 @@ final static class HashCollisionNode implements INode{
 			return ensureEditable(edit, count + 1, newArray);
 		}
 		// nest it in a bitmap node
-		return new BitmapIndexedNode(edit, bitpos(this.hash, shift), new Object[] {null, this, null, null})
+		return new BitmapIndexedNode(edit, 0, bitpos(this.hash, shift) , new Object[] {this})
 			.assoc(edit, shift, hash, key, val, addedLeaf);
 	}	
 
@@ -692,6 +767,15 @@ final static class HashCollisionNode implements INode{
 	public byte sizePredicate() {
 		return 2;
 	}
+
+	public Object getKey(int idx) {
+		return array[2*idx];
+	}
+
+	public Object getValue(int idx) {
+		return array[2*idx+1];
+	}
+
 }
 
 /*
@@ -781,11 +865,11 @@ public static void main(String[] args){
 }
 */
 
-private static INode[] cloneAndSet(INode[] array, int i, INode a) {
-	INode[] clone = array.clone();
-	clone[i] = a;
-	return clone;
-}
+//private static INode[] cloneAndSet(INode[] array, int i, INode a) {
+//	INode[] clone = array.clone();
+//	clone[i] = a;
+//	return clone;
+//}
 
 private static Object[] cloneAndSet(Object[] array, int i, Object a) {
 	Object[] clone = array.clone();
