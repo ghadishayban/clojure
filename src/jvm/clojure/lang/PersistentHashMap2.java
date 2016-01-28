@@ -542,11 +542,11 @@ final static class BitmapIndexedNode implements INode{
     }
 
     public Object kvreduce(IFn f, Object init){
-         return NodeSeq.kvreduce(array,f,init);
+         return NodeSeq.kvreduce(array,Integer.bitCount(datamap)*2, f,init);
     }
 
 	public Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin){
-		return NodeSeq.kvreduce(array, reducef, combinef.invoke());
+		return NodeSeq.kvreduce(array, Integer.bitCount(datamap)*2, reducef, combinef.invoke());
 	}
 
 	private BitmapIndexedNode ensureEditable(AtomicReference<Thread> edit){
@@ -676,11 +676,11 @@ final static class HashCollisionNode implements INode{
     }
 
     public Object kvreduce(IFn f, Object init){
-         return NodeSeq.kvreduce(array,f,init);
+         return NodeSeq.kvreduce(array, array.length*2, f, init);
     }
 
 	public Object fold(IFn combinef, IFn reducef, IFn fjtask, IFn fjfork, IFn fjjoin){
-		return NodeSeq.kvreduce(array, reducef, combinef.invoke());
+		return NodeSeq.kvreduce(array, array.length * 2, reducef, combinef.invoke());
 	}
 
 	public int findIndex(Object key){
@@ -1007,9 +1007,20 @@ static final class NodeSeq extends ASeq {
 		return null;
 	}
 
-    static public Object kvreduce(Object[] array, IFn f, Object init){
-		return null;
-    }
+	static public Object kvreduce(Object[] array, int nodesBeginIdx, IFn f, Object init) {
+		for (int i = 0; i < nodesBeginIdx; i += 2) {
+			init = f.invoke(init, array[i], array[i + 1]);
+			if (RT.isReduced(init))
+				return init;  // NB do not unwrap except in outer PHM.reduce()
+		}
+		for (int i = nodesBeginIdx; i < array.length; i++) {
+			INode node = (INode) array[i];
+			init = node.kvreduce(f, init);
+			if (RT.isReduced(init))
+				return init;
+		}
+		return init;
+	}
 
 	NodeSeq(IPersistentMap meta, Object[] array, int nodesBeginIdx, int i, ISeq s) {
 		super(meta);
