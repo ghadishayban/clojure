@@ -987,10 +987,6 @@ static final class NodeSeq extends ASeq {
 	final int nodesBeginIdx;
 	final int i;
 	final ISeq s;
-	
-	NodeSeq(Object[] array, int nodesBeginIdx, int i) {
-		this(null, array, nodesBeginIdx, i, null);
-	}
 
 	static ISeq create(Object[] array, int nodesBeginIdx) {
 		return create(array, nodesBeginIdx, 0, null);
@@ -1007,6 +1003,14 @@ static final class NodeSeq extends ASeq {
 		return null;
 	}
 
+	NodeSeq(IPersistentMap meta, Object[] array, int nodesBeginIdx, int i, ISeq s) {
+		super(meta);
+		this.array = array;
+		this.nodesBeginIdx = nodesBeginIdx;
+		this.i = i;
+		this.s = s;
+	}
+
 	static public Object kvreduce(Object[] array, int nodesBeginIdx, IFn f, Object init) {
 		for (int i = 0; i < nodesBeginIdx; i += 2) {
 			init = f.invoke(init, array[i], array[i + 1]);
@@ -1020,14 +1024,6 @@ static final class NodeSeq extends ASeq {
 				return init;
 		}
 		return init;
-	}
-
-	NodeSeq(IPersistentMap meta, Object[] array, int nodesBeginIdx, int i, ISeq s) {
-		super(meta);
-		this.array = array;
-		this.nodesBeginIdx = nodesBeginIdx;
-		this.i = i;
-		this.s = s;
 	}
 
 	public Obj withMeta(IPersistentMap meta) {
