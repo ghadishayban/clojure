@@ -534,7 +534,7 @@ final static class BitmapIndexedNode implements INode{
 	}
 
 	public ISeq nodeSeq(){
-		return NodeSeq.create(array);
+		return NodeSeq.create(array, Integer.bitCount(datamap) * 2	);
 	}
 
     public Iterator iterator(IFn f){
@@ -668,7 +668,7 @@ final static class HashCollisionNode implements INode{
 	}
 
 	public ISeq nodeSeq(){
-		return NodeSeq.create(array);
+		return NodeSeq.create(array, array.length);
 	}
 
     public Iterator iterator(IFn f){
@@ -984,59 +984,43 @@ static final class NodeIter implements Iterator {
 
 static final class NodeSeq extends ASeq {
 	final Object[] array;
+	final int threshold;  //
 	final int i;
 	final ISeq s;
 	
-	NodeSeq(Object[] array, int i) {
-		this(null, array, i, null);
+	NodeSeq(Object[] array, int threshold, int i) {
+		this(null, array, threshold, i, null);
 	}
 
-	static ISeq create(Object[] array) {
-		return create(array, 0, null);
+	static ISeq create(Object[] array, int threshold) {
+		return create(array, threshold, 0, null);
 	}
 
-    static public Object kvreduce(Object[] array, IFn f, Object init){
-         for(int i=0;i<array.length;i+=2)
-             {
-             if(array[i] != null)
-                 init = f.invoke(init, array[i], array[i+1]);
-             else
-                 {
-                 INode node = (INode) array[i+1];
-                 if(node != null)
-                     init = node.kvreduce(f,init);
-                 }
-             if(RT.isReduced(init))
-	             return init;
-             }
-        return init;
-    }
-
-	private static ISeq create(Object[] array, int i, ISeq s) {
-		if(s != null)
-			return new NodeSeq(null, array, i, s);
-		for(int j = i; j < array.length; j+=2) {
-			if(array[j] != null)
-				return new NodeSeq(null, array, j, null);
-			INode node = (INode) array[j+1];
-			if (node != null) {
-				ISeq nodeSeq = node.nodeSeq();
-				if(nodeSeq != null)
-					return new NodeSeq(null, array, j + 2, nodeSeq);
-			}
+	private static ISeq create(Object[] array, int threshold, int i, ISeq s) {
+		if(i < threshold || s != null)
+			return new NodeSeq(null, array, threshold, i, s);
+		if (i < array.length) {
+			INode node = (INode) array[i];
+			ISeq nodeSeq = node.nodeSeq();
+			return new NodeSeq(null, array, threshold, i + 1, nodeSeq);
 		}
 		return null;
 	}
-	
-	NodeSeq(IPersistentMap meta, Object[] array, int i, ISeq s) {
+
+    static public Object kvreduce(Object[] array, IFn f, Object init){
+		return null;
+    }
+
+	NodeSeq(IPersistentMap meta, Object[] array, int threshold, int i, ISeq s) {
 		super(meta);
 		this.array = array;
+		this.threshold = threshold;
 		this.i = i;
 		this.s = s;
 	}
 
 	public Obj withMeta(IPersistentMap meta) {
-		return new NodeSeq(meta, array, i, s);
+		return new NodeSeq(meta, array, threshold, i, s);
 	}
 
 	public Object first() {
@@ -1047,8 +1031,8 @@ static final class NodeSeq extends ASeq {
 
 	public ISeq next() {
 		if(s != null)
-			return create(array, i, s.next());
-		return create(array, i + 2, null);
+			return create(array, threshold, i, s.next());
+		return create(array, threshold, i + 2, null);
 	}
 }
 
