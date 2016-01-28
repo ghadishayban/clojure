@@ -984,25 +984,25 @@ static final class NodeIter implements Iterator {
 
 static final class NodeSeq extends ASeq {
 	final Object[] array;
-	final int threshold;  //
+	final int nodesBeginIdx;
 	final int i;
 	final ISeq s;
 	
-	NodeSeq(Object[] array, int threshold, int i) {
-		this(null, array, threshold, i, null);
+	NodeSeq(Object[] array, int nodesBeginIdx, int i) {
+		this(null, array, nodesBeginIdx, i, null);
 	}
 
-	static ISeq create(Object[] array, int threshold) {
-		return create(array, threshold, 0, null);
+	static ISeq create(Object[] array, int nodesBeginIdx) {
+		return create(array, nodesBeginIdx, 0, null);
 	}
 
-	private static ISeq create(Object[] array, int threshold, int i, ISeq s) {
-		if(i < threshold || s != null)
-			return new NodeSeq(null, array, threshold, i, s);
+	private static ISeq create(Object[] array, int nodesBeginIdx, int i, ISeq s) {
+		if(i < nodesBeginIdx || s != null)
+			return new NodeSeq(null, array, nodesBeginIdx, i, s);
 		if (i < array.length) {
 			INode node = (INode) array[i];
 			ISeq nodeSeq = node.nodeSeq();
-			return new NodeSeq(null, array, threshold, i + 1, nodeSeq);
+			return new NodeSeq(null, array, nodesBeginIdx, i + 1, nodeSeq);
 		}
 		return null;
 	}
@@ -1011,16 +1011,16 @@ static final class NodeSeq extends ASeq {
 		return null;
     }
 
-	NodeSeq(IPersistentMap meta, Object[] array, int threshold, int i, ISeq s) {
+	NodeSeq(IPersistentMap meta, Object[] array, int nodesBeginIdx, int i, ISeq s) {
 		super(meta);
 		this.array = array;
-		this.threshold = threshold;
+		this.nodesBeginIdx = nodesBeginIdx;
 		this.i = i;
 		this.s = s;
 	}
 
 	public Obj withMeta(IPersistentMap meta) {
-		return new NodeSeq(meta, array, threshold, i, s);
+		return new NodeSeq(meta, array, nodesBeginIdx, i, s);
 	}
 
 	public Object first() {
@@ -1031,8 +1031,8 @@ static final class NodeSeq extends ASeq {
 
 	public ISeq next() {
 		if(s != null)
-			return create(array, threshold, i, s.next());
-		return create(array, threshold, i + 2, null);
+			return create(array, nodesBeginIdx, i, s.next());
+		return create(array, nodesBeginIdx, i + 2, null);
 	}
 }
 
