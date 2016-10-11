@@ -5136,9 +5136,8 @@ static public class ObjExpr implements Expr{
 	}
 
 	public void emitKeyword(GeneratorAdapter gen, Keyword k){
-		Integer i = (Integer) keywords.valAt(k);
-		emitConstant(gen, i);
-//		gen.getStatic(fntype, munge(k.sym.toString()), KEYWORD_TYPE);
+                Handle bsm = getIndyBsm("keywordExpr", String.class);
+                gen.invokeDynamic("keyword", "()Lclojure/lang/Keyword;", bsm, k.sym.toString());
 	}
 
 	public void emitConstant(GeneratorAdapter gen, int id){
