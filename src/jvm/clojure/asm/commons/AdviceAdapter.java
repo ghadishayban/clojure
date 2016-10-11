@@ -46,17 +46,17 @@ import clojure.asm.Type;
  * <p>
  * The behavior for constructors is like this:
  * <ol>
- *
+ * 
  * <li>as long as the INVOKESPECIAL for the object initialization has not been
  * reached, every bytecode instruction is dispatched in the ctor code visitor</li>
- *
+ * 
  * <li>when this one is reached, it is only added in the ctor code visitor and a
  * JP invoke is added</li>
- *
+ * 
  * <li>after that, only the other code visitor receives the instructions</li>
- *
+ * 
  * </ol>
- *
+ * 
  * @author Eugene Kuleshov
  * @author Eric Bruneton
  */
@@ -80,10 +80,10 @@ public abstract class AdviceAdapter extends GeneratorAdapter implements Opcodes 
 
     /**
      * Creates a new {@link AdviceAdapter}.
-     *
+     * 
      * @param api
      *            the ASM API version implemented by this visitor. Must be one
-     *            of {@link Opcodes#ASM4}.
+     *            of {@link Opcodes#ASM4} or {@link Opcodes#ASM5}.
      * @param mv
      *            the method visitor to which this adapter delegates calls.
      * @param access
@@ -360,8 +360,8 @@ public abstract class AdviceAdapter extends GeneratorAdapter implements Opcodes 
                 break;
             case PUTFIELD:
                 popValue();
+                popValue();
                 if (longOrDouble) {
-                    popValue();
                     popValue();
                 }
                 break;
@@ -413,10 +413,31 @@ public abstract class AdviceAdapter extends GeneratorAdapter implements Opcodes 
         }
     }
 
+    @Deprecated
     @Override
     public void visitMethodInsn(final int opcode, final String owner,
             final String name, final String desc) {
-        mv.visitMethodInsn(opcode, owner, name, desc);
+        if (api >= Opcodes.ASM5) {
+            super.visitMethodInsn(opcode, owner, name, desc);
+            return;
+        }
+        doVisitMethodInsn(opcode, owner, name, desc,
+                opcode == Opcodes.INVOKEINTERFACE);
+    }
+
+    @Override
+    public void visitMethodInsn(final int opcode, final String owner,
+            final String name, final String desc, final boolean itf) {
+        if (api < Opcodes.ASM5) {
+            super.visitMethodInsn(opcode, owner, name, desc, itf);
+            return;
+        }
+        doVisitMethodInsn(opcode, owner, name, desc, itf);
+    }
+
+    private void doVisitMethodInsn(int opcode, final String owner,
+            final String name, final String desc, final boolean itf) {
+        mv.visitMethodInsn(opcode, owner, name, desc, itf);
         if (constructor) {
             Type[] types = Type.getArgumentTypes(desc);
             for (int i = 0; i < types.length; i++) {
@@ -569,10 +590,10 @@ public abstract class AdviceAdapter extends GeneratorAdapter implements Opcodes 
     }
 
     /**
-     * Called at the beginning of the method or after super class class call in
+     * Called at the beginning of the method or after super class call in
      * the constructor. <br>
      * <br>
-     *
+     * 
      * <i>Custom code can use or change all the local variables, but should not
      * change state of the stack.</i>
      */
@@ -583,7 +604,7 @@ public abstract class AdviceAdapter extends GeneratorAdapter implements Opcodes 
      * Called before explicit exit from the method using either return or throw.
      * Top element on the stack contains the return value or exception instance.
      * For example:
-     *
+     * 
      * <pre>
      *   public void onMethodExit(int opcode) {
      *     if(opcode==RETURN) {
@@ -601,22 +622,22 @@ public abstract class AdviceAdapter extends GeneratorAdapter implements Opcodes 
      *     visitIntInsn(SIPUSH, opcode);
      *     visitMethodInsn(INVOKESTATIC, owner, "onExit", "(Ljava/lang/Object;I)V");
      *   }
-     *
+     * 
      *   // an actual call back method
      *   public static void onExit(Object param, int opcode) {
      *     ...
      * </pre>
-     *
+     * 
      * <br>
      * <br>
-     *
+     * 
      * <i>Custom code can use or change all the local variables, but should not
      * change state of the stack.</i>
-     *
+     * 
      * @param opcode
      *            one of the RETURN, IRETURN, FRETURN, ARETURN, LRETURN, DRETURN
      *            or ATHROW
-     *
+     * 
      */
     protected void onMethodExit(int opcode) {
     }
