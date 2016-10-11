@@ -1640,7 +1640,7 @@ static public ISeq listStar(Object arg1, Object arg2, Object arg3, Object arg4, 
 	return (ISeq) cons(arg1, cons(arg2, cons(arg3, cons(arg4, cons(arg5, rest)))));
 }
 
-static public ISeq arrayToList(Object[] a) {
+static public ISeq arrayToList(Object... a) {
 	ISeq ret = null;
 	for(int i = a.length - 1; i >= 0; --i)
 		ret = (ISeq) cons(a[i], ret);
