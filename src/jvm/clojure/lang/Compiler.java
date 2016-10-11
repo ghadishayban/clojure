@@ -5125,8 +5125,8 @@ static public class ObjExpr implements Expr{
 		Integer i = (Integer) vars.valAt(v);
 		if(!v.isDynamic())
 			{
-			emitConstant(gen, i);
-			gen.invokeVirtual(VAR_TYPE, varGetRawMethod);
+                        Handle bsm = getIndyBsm("varExpr", String.class, String.class);
+                        gen.invokeDynamic("varExpr", "()Ljava/lang/Object;", bsm, v.ns.name.name, v.sym.name);
 			}
 		else
 			{
