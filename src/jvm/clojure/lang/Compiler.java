@@ -17,7 +17,7 @@ package clojure.lang;
 import clojure.asm.*;
 import clojure.asm.commons.GeneratorAdapter;
 import clojure.asm.commons.Method;
-
+import java.lang.invoke.*;
 import java.io.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
@@ -8861,6 +8861,12 @@ public static class CaseExpr implements Expr, MaybePrimitiveExpr{
 }
 
 static IPersistentCollection emptyVarCallSites(){return PersistentHashSet.EMPTY;}
+
+static private Handle getIndyBsm(String name, Class... extraTypes) {
+      String descriptor = MethodType.methodType(CallSite.class, MethodHandles.Lookup.class, String.class, MethodType.class)
+              .appendParameterTypes(extraTypes).toMethodDescriptorString();
+      return new Handle(Opcodes.H_INVOKESTATIC, "clojure/lang/BootstrapMethods", name, descriptor, false);
+}
 
     static public ClassWriter classWriter() {
 	return new ClassWriter(ClassWriter.COMPUTE_MAXS + ClassWriter.COMPUTE_FRAMES) {

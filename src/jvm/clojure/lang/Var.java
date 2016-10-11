@@ -14,8 +14,12 @@ package clojure.lang;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodHandle;
+
 
 public final class Var extends ARef implements IFn, IRef, Settable{
+
 
 static class TBox{
 
@@ -712,4 +716,15 @@ static IFn dissoc = new AFn() {
             return RT.dissoc(c, k);
     }
 };
+
+static {
+	try {
+	       	ROOT = MethodHandles.lookup().findGetter(Var.class, "root", Object.class);
+	} catch (Exception e) {
+            throw new RuntimeException("Failed to boostrap Var MH");
+	}
+}
+
+static final MethodHandle ROOT;
+
 }
