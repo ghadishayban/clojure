@@ -3257,7 +3257,7 @@ static class KeywordInvokeExpr implements Expr{
 	public final Expr target;
 	public final int line;
 	public final int column;
-	public final int siteIndex;
+
 	public final String source;
 	static Type ILOOKUP_TYPE = Type.getType(ILookup.class);
 
@@ -3268,7 +3268,6 @@ static class KeywordInvokeExpr implements Expr{
 		this.line = line;
 		this.column = column;
 		this.tag = tag;
-		this.siteIndex = registerKeywordCallsite(kw.k);
 	}
 
 	public Object eval() {
@@ -3286,35 +3285,13 @@ static class KeywordInvokeExpr implements Expr{
 	}
 
     public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-        Label endLabel = gen.newLabel();
-        Label faultLabel = gen.newLabel();
+	String rep = kw.k.sym.toString();
+	Handle bsm = getIndyBsm("keywordInvoke", String.class);
+	target.emit(C.EXPRESSION, objx, gen);
 
-        gen.visitLineNumber(line, gen.mark());
-        gen.getStatic(objx.objtype, objx.thunkNameStatic(siteIndex),ObjExpr.ILOOKUP_THUNK_TYPE);
-        gen.dup();  //thunk, thunk
-        target.emit(C.EXPRESSION, objx, gen); //thunk,thunk,target
-        gen.visitLineNumber(line, gen.mark());
-        gen.dupX2();                          //target,thunk,thunk,target
-        gen.invokeInterface(ObjExpr.ILOOKUP_THUNK_TYPE, Method.getMethod("Object get(Object)")); //target,thunk,result
-        gen.dupX2();                          //result,target,thunk,result
-        gen.visitJumpInsn(IF_ACMPEQ, faultLabel); //result,target
-        gen.pop();                                //result
-        gen.goTo(endLabel);
-
-        gen.mark(faultLabel);    //result,target
-        gen.swap();              //target,result
-        gen.pop();               //target
-	    gen.dup();               //target,target
-        gen.getStatic(objx.objtype, objx.siteNameStatic(siteIndex),ObjExpr.KEYWORD_LOOKUPSITE_TYPE);  //target,target,site
-        gen.swap();              //target,site,target
-        gen.invokeInterface(ObjExpr.ILOOKUP_SITE_TYPE,
-                            Method.getMethod("clojure.lang.ILookupThunk fault(Object)"));    //target,new-thunk
-	    gen.dup();   //target,new-thunk,new-thunk
-	    gen.putStatic(objx.objtype, objx.thunkNameStatic(siteIndex),ObjExpr.ILOOKUP_THUNK_TYPE);  //target,new-thunk
-	    gen.swap();              //new-thunk,target
-	    gen.invokeInterface(ObjExpr.ILOOKUP_THUNK_TYPE, Method.getMethod("Object get(Object)")); //result
-
-        gen.mark(endLabel);
+	gen.visitLineNumber(line, gen.mark());
+        gen.invokeDynamic("keywordInvoke", "(Ljava/lang/Object;)Ljava/lang/Object;", bsm, rep);
+	
         if(context == C.STATEMENT)
             gen.pop();
     }
@@ -3821,7 +3798,7 @@ static class InvokeExpr implements Expr{
 				}
 			}
 
-		if(fexpr instanceof KeywordExpr && RT.count(form) == 2 && KEYWORD_CALLSITES.isBound())
+		if(fexpr instanceof KeywordExpr && RT.count(form) == 2)
 			{
 //			fexpr = new ConstantExpr(new KeywordCallSite(((KeywordExpr)fexpr).k));
 			Expr target = analyze(context, RT.second(form));
