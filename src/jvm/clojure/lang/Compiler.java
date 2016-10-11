@@ -5187,6 +5187,8 @@ static public class ObjExpr implements Expr{
 			//can't emit derived fn types due to visibility
 			if(LazySeq.class.isAssignableFrom(c))
 				return Type.getType(ISeq.class);
+			else if(IPersistentMap.class.isAssignableFrom(c))
+			    return Type.getType(IPersistentMap.class);
 			else if(c == Keyword.class)
 				return Type.getType(Keyword.class);
 //			else if(c == KeywordCallSite.class)
