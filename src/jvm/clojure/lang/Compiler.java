@@ -4811,11 +4811,9 @@ static public class ObjExpr implements Expr{
 		else if(value instanceof ISeq || value instanceof IPersistentList)
 			{
 			emitListAsObjectArray(value, gen);
-			gen.invokeStatic(Type.getType(java.util.Arrays.class),
-							 Method.getMethod("java.util.List asList(Object[])"));
 			gen.invokeStatic(Type.getType(PersistentList.class),
 							 Method.getMethod(
-									 "clojure.lang.IPersistentList create(java.util.List)"));
+									 "clojure.lang.IPersistentList create(Object[])"));
 			}
 		else if(value instanceof Pattern)
 			{

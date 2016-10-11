@@ -90,6 +90,13 @@ public static IPersistentList create(List init){
 	return ret;
 }
 
+public static IPersistentList create(Object... a){
+	IPersistentList ret = EMPTY;
+	for(int i = a.length -1; i >= 0; --i)
+	    ret = (IPersistentList) ret.cons(a[i]);
+	return ret;
+}
+
 public Object first(){
 	return _first;
 }
