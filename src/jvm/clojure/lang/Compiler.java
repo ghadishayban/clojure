@@ -4057,7 +4057,7 @@ static public class FnExpr extends ObjExpr{
 		return methods;
 	}
 
-	public void emitForDefn(ObjExpr objx, GeneratorAdapter gen){
+    //    	public void emitForDefn(ObjExpr objx, GeneratorAdapter gen){
 //		if(!hasPrimSigs && closes.count() == 0)
 //			{
 //			Type thunkType = Type.getType(FnLoaderThunk.class);
@@ -4070,8 +4070,8 @@ static public class FnExpr extends ObjExpr{
 //			gen.invokeConstructor(thunkType,Method.getMethod("void <init>(clojure.lang.Var,String)"));
 //			}
 //		else
-			emit(C.EXPRESSION,objx,gen);
-	}
+	// 		emit(C.EXPRESSION,objx,gen);
+	// }
 }
 
 static public class ObjExpr implements Expr{
@@ -4946,10 +4946,9 @@ static public class ObjExpr implements Expr{
 
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+	public void emitForDefn(ObjExpr objx, GeneratorAdapter gen){
 		//emitting a Fn means constructing an instance, feeding closed-overs from enclosing scope, if any
 		//objx arg is enclosing objx, not this
-//		getCompiledClass();
 		if(isDeftype())
 			{
 			gen.visitInsn(Opcodes.ACONST_NULL);
@@ -4970,6 +4969,37 @@ static public class ObjExpr implements Expr{
 					objx.emitLocal(gen, lb, lbe.shouldClear);
 				}
 			gen.invokeConstructor(objtype, new Method("<init>", Type.VOID_TYPE, ctorTypes()));
+			}
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+	    emitLazyInit(context, objx, gen);
+	}
+
+        void emitLazyInit(C context, ObjExpr objx, GeneratorAdapter gen){
+		//emitting a Fn means constructing an instance, feeding closed-overs from enclosing scope, if any
+		//objx arg is enclosing objx, not this
+
+		if(isDeftype())
+			{
+			gen.visitInsn(Opcodes.ACONST_NULL);
+			}
+		else
+			{
+			    if(supportsMeta())
+				gen.visitInsn(Opcodes.ACONST_NULL);
+			for(ISeq s = RT.seq(closesExprs); s != null; s = s.next())
+				{
+				LocalBindingExpr lbe = (LocalBindingExpr) s.first();
+				LocalBinding lb = lbe.b;
+				if(lb.getPrimitiveType() != null)
+					objx.emitUnboxedLocal(gen, lb);
+				else
+					objx.emitLocal(gen, lb, lbe.shouldClear);
+				}
+			String desc = Type.getMethodDescriptor(Type.getType(getJavaClass()), ctorTypes());
+			Handle bsm = getIndyBsm("lazyFnExpr", String.class);
+                        gen.invokeDynamic("lazyFnExpr", desc, bsm, name);
 			}
 		if(context == C.STATEMENT)
 			gen.pop();

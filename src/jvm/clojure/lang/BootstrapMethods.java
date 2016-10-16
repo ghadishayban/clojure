@@ -77,4 +77,17 @@ public class BootstrapMethods {
 	    Keyword k = Keyword.intern(rep);
 	    return KeywordInvokeCallSite.create(k);
 	}
+
+    public static CallSite lazyFnExpr(MethodHandles.Lookup lk, String methodName, MethodType t, String fnClass) {
+	MethodHandle mh;
+	try {
+	    Class klass = RT.classForName(fnClass);
+	    mh = lk.findConstructor(klass, t.changeReturnType(void.class)).asType(t);
+	} catch (Exception e) {
+	    throw Util.sneakyThrow(e);
+	}
+
+	return new ConstantCallSite(mh);
+
+    }
 }
