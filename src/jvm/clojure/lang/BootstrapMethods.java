@@ -13,6 +13,7 @@ public class BootstrapMethods {
         private static final MethodHandle MAP_UNIQUE;
         private static final MethodHandle ARRAY_MAP;
         private static final MethodHandle ARRAY_MAP_UNIQUE;
+        private static final MethodHandle MAP_FROM_TEMPLATE;
 
         public static final MethodHandle RT_MAP;
         public static final MethodHandle VECTOR;
@@ -21,6 +22,59 @@ public class BootstrapMethods {
 
         private static MethodHandle mapCreator(MethodHandle src) {
         	return src.asType(IPERSISTENT_MAP_TYPE).asVarargsCollector(Object[].class); 
+        }
+
+        public static int[] slotsFromBitmap(int count, int bitmap) {
+
+            final int mask = (1 << (count & 31)) - 1;
+            bitmap = bitmap & mask;
+            int[] ret = new int[Integer.bitCount(bitmap)];
+
+            int slotIdx = 0;
+            for (int i = 0; i < count; i++) {
+                if ((bitmap & 1) == 1) {
+                    ret[slotIdx] = i;
+                    slotIdx++;
+                }
+                bitmap = bitmap >>> 1;
+            }
+            return ret;
+        }
+
+        public static IPersistentMap createMapFromTemplate(int[] slots, Object[] template, Object... dynArgs) {
+            final int n = template.length;
+
+            Object[] arr = new Object[n];
+            System.arraycopy(template, 0, arr, 0, n);
+
+            for (int i = 0; i < slots.length; i++) {
+                arr[slots[i]] = dynArgs[i];
+            }
+
+            if (n < 16) {
+                return new PersistentArrayMap(arr);
+            } else {
+                return PersistentHashMap.create(arr);
+            }
+        }
+
+        // this *must* be varargs for proper bsm linkage
+        public static CallSite kwMap(MethodHandles.Lookup lk, String methodName, MethodType t, Object... data) {
+            int n               = (int) data[0];
+            int constantsBitmap = (int) data[1];
+            Object[] template = new Object[n];
+            int i = 2;
+
+            for (int slot : slotsFromBitmap(n, constantsBitmap)) {
+                template[slot] = Keyword.intern((String) data[i]);
+                i++;
+            }
+
+            // bit-invert the constant markers to get the dynamic markers
+            MethodHandle mh = MethodHandles.insertArguments(MAP_FROM_TEMPLATE, 0,
+                    slotsFromBitmap(n, ~constantsBitmap), template);
+
+            return new ConstantCallSite(mh.asCollector(Object[].class, t.parameterCount()));
         }
 
     static {
@@ -38,6 +92,9 @@ public class BootstrapMethods {
 
                 ARRAY_MAP        = mapCreator(lk.findStatic(PersistentArrayMap.class, "createWithCheck", amaptype));
                 ARRAY_MAP_UNIQUE = mapCreator(lk.findConstructor(PersistentArrayMap.class, MethodType.methodType(void.class, Object[].class)));
+
+                MAP_FROM_TEMPLATE = lk.findStatic(BootstrapMethods.class, "createMapFromTemplate",
+                        MethodType.methodType(IPersistentMap.class, int[].class, Object[].class, Object[].class));
 
                 RT_MAP = lk.findStatic(RT.class, "map", IPERSISTENT_MAP_TYPE);
         } catch (Exception e) {

@@ -3008,13 +3008,65 @@ public static class ListExpr implements Expr{
 
 public static class MapExpr implements Expr{
 	public final IPersistentVector keyvals;
+	final boolean uniqueKeys;
+	final boolean templateable;
 	final static Method mapMethod = Method.getMethod("clojure.lang.IPersistentMap map(Object[])");
 	final static Method mapUniqueKeysMethod = Method.getMethod("clojure.lang.IPersistentMap mapUniqueKeys(Object[])");
 
 
-	public MapExpr(IPersistentVector keyvals){
+	public MapExpr(IPersistentVector keyvals, boolean uniqueKeys){
 		this.keyvals = keyvals;
+		this.uniqueKeys = uniqueKeys;
+		this.templateable = false;
 	}
+
+
+	public MapExpr(IPersistentVector keyvals, boolean uniqueKeys, boolean templateable){
+		this.keyvals = keyvals;
+		this.uniqueKeys = uniqueKeys;
+		this.templateable = templateable;
+	}
+
+    void emitPartial(ObjExpr objx, GeneratorAdapter gen) {
+
+        Object[] staticArgs = new Object[keyvals.count()];
+
+		int constantsBitmap = 0;
+        int ndyn = 0;
+        int nstatic = 0;
+		for(int i = 0; i < keyvals.count(); i++) {
+            Expr e = (Expr) keyvals.nth(i);
+            if (e instanceof KeywordExpr) {
+                Keyword k = ((KeywordExpr) e).k;
+                staticArgs[nstatic] = k.sym.toString();
+				constantsBitmap = constantsBitmap | (1 << i);
+                nstatic++;
+            } else {
+            	ndyn++;
+			}
+        }
+
+		Object[] bsmArgs = new Object[(2 + nstatic)];
+		bsmArgs[0] = keyvals.count();
+		bsmArgs[1] = constantsBitmap;
+		System.arraycopy(staticArgs, 0, bsmArgs, 2, nstatic);
+
+		MethodType mt = MethodType.genericMethodType(ndyn).changeReturnType(IPersistentMap.class);
+
+		// emit dynamic arguments
+		for(int i = 0; i < keyvals.count(); i++) {
+			Expr e = (Expr) keyvals.nth(i);
+			if (!(e instanceof KeywordExpr)) {
+				e.emit(C.EXPRESSION, objx, gen);
+			}
+		}
+
+        gen.invokeDynamic("kwMap",
+				mt.toMethodDescriptorString(),
+				getIndyBsm("kwMap", Object[].class),
+				bsmArgs);
+
+    }
 
 	public Object eval() {
 		Object[] ret = new Object[keyvals.count()];
@@ -3024,28 +3076,17 @@ public static class MapExpr implements Expr{
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-		boolean allKeysConstant = true;
-		boolean allConstantKeysUnique = true;
-		IPersistentSet constantKeys = PersistentHashSet.EMPTY;
-		for(int i = 0; i < keyvals.count(); i+=2)
-			{
-			Expr k = (Expr) keyvals.nth(i);
-			if(k instanceof LiteralExpr)
-				{
-				Object kval = k.eval();
-				if (constantKeys.contains(kval))
-					allConstantKeysUnique = false;
-				else
-					constantKeys = (IPersistentSet)constantKeys.cons(kval);
-				}
-			else
-				allKeysConstant = false;
+		if(uniqueKeys) {
+			if (templateable && keyvals.count() <= 32) {
+				emitPartial(objx, gen);
+			} else {
+				MethodExpr.emitArgsAsArray(keyvals, objx, gen);
+				gen.invokeStatic(RT_TYPE, mapUniqueKeysMethod);
 			}
-		MethodExpr.emitArgsAsArray(keyvals, objx, gen);
-		if((allKeysConstant && allConstantKeysUnique) || (keyvals.count() <= 2))
-			gen.invokeStatic(RT_TYPE, mapUniqueKeysMethod);
-		else
+		}	else {
+			MethodExpr.emitArgsAsArray(keyvals, objx, gen);
 			gen.invokeStatic(RT_TYPE, mapMethod);
+		}
 		if(context == C.STATEMENT)
 			gen.pop();
 	}
@@ -3064,6 +3105,7 @@ public static class MapExpr implements Expr{
 		boolean keysConstant = true;
 		boolean valsConstant = true;
 		boolean allConstantKeysUnique = true;
+		boolean templateable = false;
 		IPersistentSet constantKeys = PersistentHashSet.EMPTY;
 		for(ISeq s = RT.seq(form); s != null; s = s.next())
 			{
@@ -3072,6 +3114,8 @@ public static class MapExpr implements Expr{
 			Expr v = analyze(context == C.EVAL ? context : C.EXPRESSION, e.val());
 			keyvals = (IPersistentVector) keyvals.cons(k);
 			keyvals = (IPersistentVector) keyvals.cons(v);
+			if (k instanceof KeywordExpr || v instanceof KeywordExpr)
+				templateable = true;
 			if(k instanceof LiteralExpr)
 				{
 				Object kval = k.eval();
@@ -3086,30 +3130,24 @@ public static class MapExpr implements Expr{
 				valsConstant = false;
 			}
 
-		Expr ret = new MapExpr(keyvals);
 		if(form instanceof IObj && ((IObj) form).meta() != null)
-			return new MetaExpr(ret, MapExpr
+			return new MetaExpr(new MapExpr(keyvals, false), MapExpr
 					.parse(context == C.EVAL ? context : C.EXPRESSION, ((IObj) form).meta()));
-		else if(keysConstant)
-			{
+		else if(keysConstant) {
 			// TBD: Add more detail to exception thrown below.
-			if(!allConstantKeysUnique)
+			if (!allConstantKeysUnique)
 				throw new IllegalArgumentException("Duplicate constant keys in map");
-			if(valsConstant)
-				{
+			if (valsConstant) {
 				IPersistentMap m = PersistentArrayMap.EMPTY;
-				for(int i=0;i<keyvals.length();i+= 2)
-					{
-					m = m.assoc(((LiteralExpr)keyvals.nth(i)).val(), ((LiteralExpr)keyvals.nth(i+1)).val());
-					}
+				for (int i = 0; i < keyvals.length(); i += 2) {
+					m = m.assoc(((LiteralExpr) keyvals.nth(i)).val(), ((LiteralExpr) keyvals.nth(i + 1)).val());
+				}
 //				System.err.println("Constant: " + m);
 				return new ConstantExpr(m);
-				}
-			else
-				return ret;
 			}
-		else
-			return ret;
+
+		}
+		return new MapExpr(keyvals, keysConstant, templateable);
 	}
 }
 
