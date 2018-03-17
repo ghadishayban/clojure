@@ -5889,8 +5889,7 @@
                    load-all
                    (or reload (not already-loaded?))
                    load-one)
-        filter-opts (select-keys opts '(:exclude :only :rename :refer))
-        undefined-on-entry (not (find-ns lib))]
+        filter-opts (select-keys opts '(:exclude :only :rename :refer))]
     (binding [*loading-verbosely* (or *loading-verbosely* verbose)]
       (if load
         (try
@@ -5900,8 +5899,7 @@
             ;; clojure.core/ns itself records in *loaded-libs*.
             ;; undo its effects
             (when (not already-loaded?)
-              (dosync (alter *loaded-libs* disj lib)))
-            (when undefined-on-entry
+              (dosync (alter *loaded-libs* disj lib))
               (remove-ns lib))
             (throw e)))
         (throw-if (not (find-ns lib))
