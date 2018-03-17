@@ -5857,27 +5857,22 @@
 
 (defn- load-one
   "Loads a lib given its name. If need-ns, ensures that the associated
-  namespace exists after loading. If require, records the load so any
-  duplicate loads can be skipped."
-  [lib need-ns require]
+  namespace exists after loading."
+  [lib need-ns]
   (load (root-resource lib))
   (throw-if (and need-ns (not (find-ns lib)))
             "namespace '%s' not found after loading '%s'"
-            lib (root-resource lib))
-  (when require
-    (dosync
-     (commute *loaded-libs* conj lib))))
+            lib (root-resource lib)))
 
 (defn- load-all
   "Loads a lib given its name and forces a load of any libs it directly or
   indirectly loads. If need-ns, ensures that the associated namespace
-  exists after loading. If require, records the load so any duplicate loads
-  can be skipped."
-  [lib need-ns require]
+  exists after loading."
+  [lib need-ns]
   (dosync
    (commute *loaded-libs* #(reduce1 conj %1 %2)
             (binding [*loaded-libs* (ref (sorted-set))]
-              (load-one lib need-ns require)
+              (load-one lib need-ns)
               @*loaded-libs*))))
 
 (defn- load-lib
@@ -5892,7 +5887,7 @@
         already-loaded? (contains? @*loaded-libs* lib)
         load (cond reload-all
                    load-all
-                   (or reload (not require) (not already-loaded?))
+                   (or reload (not already-loaded?))
                    load-one)
         need-ns (or as use)
         filter-opts (select-keys opts '(:exclude :only :rename :refer))
@@ -5900,7 +5895,7 @@
     (binding [*loading-verbosely* (or *loading-verbosely* verbose)]
       (if load
         (try
-          (load lib need-ns require)
+          (load lib need-ns)
           (catch Exception e
             ;; to facilitate creating namespaces at the REPL
             ;; clojure.core/ns itself records in *loaded-libs*.
@@ -6074,7 +6069,7 @@
   {:added "1.0"}
   [lib]
   (binding [*compile-files* true]
-    (load-one lib true true))
+    (load-one lib true))
   lib)
 
 ;;;;;;;;;;;;; nested associative ops ;;;;;;;;;;;
