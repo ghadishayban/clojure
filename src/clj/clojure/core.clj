@@ -5856,23 +5856,23 @@
 (def ^:declared ^:redef load)
 
 (defn- load-one
-  "Loads a lib given its name. If need-ns, ensures that the associated
+  "Loads a lib given its name. Ensures that the associated
   namespace exists after loading."
-  [lib need-ns]
+  [lib]
   (load (root-resource lib))
-  (throw-if (and need-ns (not (find-ns lib)))
+  (throw-if (not (find-ns lib))
             "namespace '%s' not found after loading '%s'"
             lib (root-resource lib)))
 
 (defn- load-all
   "Loads a lib given its name and forces a load of any libs it directly or
-  indirectly loads. If need-ns, ensures that the associated namespace
+  indirectly loads. Ensures that the associated namespace
   exists after loading."
-  [lib need-ns]
+  [lib]
   (dosync
    (commute *loaded-libs* #(reduce1 conj %1 %2)
             (binding [*loaded-libs* (ref (sorted-set))]
-              (load-one lib need-ns)
+              (load-one lib)
               @*loaded-libs*))))
 
 (defn- load-lib
@@ -5889,13 +5889,12 @@
                    load-all
                    (or reload (not already-loaded?))
                    load-one)
-        need-ns (or as use)
         filter-opts (select-keys opts '(:exclude :only :rename :refer))
         undefined-on-entry (not (find-ns lib))]
     (binding [*loading-verbosely* (or *loading-verbosely* verbose)]
       (if load
         (try
-          (load lib need-ns)
+          (load lib)
           (catch Exception e
             ;; to facilitate creating namespaces at the REPL
             ;; clojure.core/ns itself records in *loaded-libs*.
@@ -5905,9 +5904,9 @@
             (when undefined-on-entry
               (remove-ns lib))
             (throw e)))
-        (throw-if (and need-ns (not (find-ns lib)))
+        (throw-if (not (find-ns lib))
                   "namespace '%s' not found" lib))
-      (when (and need-ns *loading-verbosely*)
+      (when *loading-verbosely*
         (printf "(clojure.core/in-ns '%s)\n" (ns-name *ns*)))
       (when as
         (when *loading-verbosely*
@@ -6069,7 +6068,7 @@
   {:added "1.0"}
   [lib]
   (binding [*compile-files* true]
-    (load-one lib true))
+    (load-one lib))
   lib)
 
 ;;;;;;;;;;;;; nested associative ops ;;;;;;;;;;;
