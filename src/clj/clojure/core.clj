@@ -5889,10 +5889,10 @@
   (let [lib (if prefix (symbol (str prefix \. lib)) lib)
         opts (apply hash-map options)
         {:keys [as reload reload-all require use verbose]} opts
-        loaded (contains? @*loaded-libs* lib)
+        already-loaded? (contains? @*loaded-libs* lib)
         load (cond reload-all
                    load-all
-                   (or reload (not require) (not loaded))
+                   (or reload (not require) (not already-loaded?))
                    load-one)
         need-ns (or as use)
         filter-opts (select-keys opts '(:exclude :only :rename :refer))
@@ -5902,6 +5902,11 @@
         (try
           (load lib need-ns require)
           (catch Exception e
+            ;; to facilitate creating namespaces at the REPL
+            ;; clojure.core/ns itself records in *loaded-libs*.
+            ;; undo its effects
+            (when (not already-loaded?)
+              (dosync (alter *loaded-libs* disj lib)))
             (when undefined-on-entry
               (remove-ns lib))
             (throw e)))
