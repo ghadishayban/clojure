@@ -1645,8 +1645,10 @@
      (try
       (monitor-enter lockee#)
       ~@body
-      (finally
-       (monitor-exit lockee#)))))
+      (monitor-exit lockee#)
+      (catch Exception e#
+        (monitor-exit lockee#)
+        (throw e#)))))
 
 (defmacro ..
   "form => fieldName-symbol or (instanceMethodName-symbol args*)
