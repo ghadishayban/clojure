@@ -112,6 +112,7 @@ static IPersistentMap ops = RT.map(
 
 //map to instructions terminated with comparator for branch to false
 static IPersistentMap preds = RT.map(
+  "public static boolean clojure.lang.Util.identical(java.lang.Object,java.lang.Object)", oa(IF_ACMPNE),
   "public static boolean clojure.lang.Numbers.lt(double,double)", oa(DCMPG, IFGE),
   "public static boolean clojure.lang.Numbers.lt(long,long)", oa(LCMP, IFGE),
   "public static boolean clojure.lang.Numbers.equiv(double,double)", oa(DCMPL, IFNE),
