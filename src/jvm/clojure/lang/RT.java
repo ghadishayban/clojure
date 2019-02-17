@@ -305,7 +305,7 @@ public static boolean checkSpecAsserts = Boolean.getBoolean("clojure.spec.check-
 public static boolean instrumentMacros = ! Boolean.getBoolean("clojure.spec.skip-macros");
 static volatile boolean CHECK_SPECS = false;
 
-static{
+public static void initRuntime() {
 	Keyword arglistskw = Keyword.intern(null, "arglists");
 	Symbol namesym = Symbol.intern("name");
 	OUT.setTag(Symbol.intern("java.io.Writer"));
