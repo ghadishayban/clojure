@@ -7782,7 +7782,7 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 
 		//static load method
 		GeneratorAdapter gen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
-		                                            Method.getMethod("void load ()"),
+		                                            Method.getMethod("void __load ()"),
 		                                            null,
 		                                            null,
 		                                            cv);
@@ -7806,7 +7806,7 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 		for(int i = 0; i < objx.constants.count(); i++)
 			{
             if(objx.usedConstants.contains(i))
-			    cv.visitField(ACC_PUBLIC + ACC_FINAL + ACC_STATIC, objx.constantName(i), objx.constantType(i).getDescriptor(),
+			    cv.visitField(ACC_PUBLIC + ACC_STATIC, objx.constantName(i), objx.constantType(i).getDescriptor(),
 			              null, null);
 			}
 
@@ -7847,7 +7847,7 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 
 		//static init for constants, keywords and vars
 		GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
-		                                                  Method.getMethod("void <clinit> ()"),
+		                                                  Method.getMethod("void load()"),
 		                                                  null,
 		                                                  null,
 		                                                  cv);
@@ -7869,7 +7869,7 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 		clinitgen.invokeVirtual(CLASS_TYPE,Method.getMethod("ClassLoader getClassLoader()"));
 		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void pushNSandLoader(ClassLoader)"));
 		clinitgen.mark(startTry);
-		clinitgen.invokeStatic(objx.objtype, Method.getMethod("void load()"));
+		clinitgen.invokeStatic(objx.objtype, Method.getMethod("void __load()"));
 		clinitgen.mark(endTry);
 		clinitgen.invokeStatic(VAR_TYPE, Method.getMethod("void popThreadBindings()"));
 		clinitgen.goTo(end);

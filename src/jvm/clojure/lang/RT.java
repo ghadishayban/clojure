@@ -450,7 +450,16 @@ static public void load(String scriptbase, boolean failIfNotFound) throws IOExce
 					RT.mapUniqueKeys(CURRENT_NS, CURRENT_NS.deref(),
 					       WARN_ON_REFLECTION, WARN_ON_REFLECTION.deref()
 							,RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref()));
-			loaded = (loadClassForName(scriptbase.replace('/', '.') + LOADER_SUFFIX) != null);
+			Class loader = loadClassForName(scriptbase.replace('/', '.') + LOADER_SUFFIX);
+			if (loader != null) {
+				try {
+					java.lang.reflect.Method m = loader.getMethod("load");
+					m.invoke(null);
+				} catch(Exception e) {
+					Util.sneakyThrow(e);
+				}
+			}
+			loaded = (loader != null);
 		}
 		finally {
 			Var.popThreadBindings();
