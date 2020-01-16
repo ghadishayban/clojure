@@ -8235,9 +8235,9 @@ static public class NewInstanceExpr extends ObjExpr{
 
 					mv.visitVarInsn(ALOAD, 0);
 					mv.visitLdcInsn(bName);
-					mv.visitMethodInsn(INVOKESTATIC, "clojure/lang/Keyword", "intern", "(Ljava/lang/String;)Lclojure/lang/Keyword;");
+					mv.visitMethodInsn(INVOKESTATIC, "clojure/lang/Keyword", "intern", "(Ljava/lang/String;)Lclojure/lang/Keyword;", false);
 					mv.visitInsn(ACONST_NULL);
-					mv.visitMethodInsn(INVOKEINTERFACE, "clojure/lang/IPersistentMap", "valAt", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+					mv.visitMethodInsn(INVOKEINTERFACE, "clojure/lang/IPersistentMap", "valAt", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true);
 					if(k.isPrimitive())
 						{
 						mv.visitTypeInsn(CHECKCAST, Type.getType(boxClass(k)).getInternalName());
@@ -8245,8 +8245,8 @@ static public class NewInstanceExpr extends ObjExpr{
 					mv.visitVarInsn(ASTORE, i);
 					mv.visitVarInsn(ALOAD, 0);
 					mv.visitLdcInsn(bName);
-					mv.visitMethodInsn(INVOKESTATIC, "clojure/lang/Keyword", "intern", "(Ljava/lang/String;)Lclojure/lang/Keyword;");
-					mv.visitMethodInsn(INVOKEINTERFACE, "clojure/lang/IPersistentMap", "without", "(Ljava/lang/Object;)Lclojure/lang/IPersistentMap;");
+					mv.visitMethodInsn(INVOKESTATIC, "clojure/lang/Keyword", "intern", "(Ljava/lang/String;)Lclojure/lang/Keyword;", false);
+					mv.visitMethodInsn(INVOKEINTERFACE, "clojure/lang/IPersistentMap", "without", "(Ljava/lang/Object;)Lclojure/lang/IPersistentMap;", true);
 					mv.visitVarInsn(ASTORE, 0);
 					}
 
@@ -8266,16 +8266,16 @@ static public class NewInstanceExpr extends ObjExpr{
 							String p = Type.getType(k).getDescriptor();
 							String n = k.getName();
 
-							mv.visitMethodInsn(INVOKEVIRTUAL, b, n+"Value", "()"+p);
+							mv.visitMethodInsn(INVOKEVIRTUAL, b, n+"Value", "()"+p, false);
 							}
 						}
 
 				mv.visitInsn(ACONST_NULL); //__meta
 				mv.visitVarInsn(ALOAD, 0); //__extmap
-				mv.visitMethodInsn(INVOKESTATIC, "clojure/lang/RT", "seqOrElse", "(Ljava/lang/Object;)Ljava/lang/Object;");
+				mv.visitMethodInsn(INVOKESTATIC, "clojure/lang/RT", "seqOrElse", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
 				mv.visitInsn(ICONST_0); //__hash
 				mv.visitInsn(ICONST_0); //__hasheq
-				mv.visitMethodInsn(INVOKESPECIAL, className, "<init>", ctor.getDescriptor());
+				mv.visitMethodInsn(INVOKESPECIAL, className, "<init>", ctor.getDescriptor(), false);
 				mv.visitInsn(ARETURN);
 				mv.visitMaxs(4+fieldCount, 1+fieldCount);
 				mv.visitEnd();
