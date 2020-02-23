@@ -56,6 +56,7 @@
        <!--<sysproperty key="clojure.compile.warn-on-reflection" value="true"/>-->
         <sysproperty key="clojure.compiler.direct-linking" value="true"/>
       <sysproperty key="java.awt.headless" value="true"/>
+<sysproperty key="clojure.spec.skip-macros" value="true"/>
       <arg value="clojure.core"/>
       <arg value="clojure.core.protocols"/>
       <arg value="clojure.core.server"/>
@@ -82,6 +83,9 @@
       <arg value="clojure.data"/>
       <arg value="clojure.reflect"/>
       <arg value="clojure.datafy"/>
+      <arg value="clojure.spec.alpha"/>
+      <arg value="clojure.spec.test.alpha"/>
+      <arg value="clojure.spec.gen.alpha"/>
     </java>
   </target>
 
