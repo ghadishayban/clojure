@@ -350,6 +350,9 @@ interface Expr{
 	Object eval() ;
 
 	void emit(C context, ObjExpr objx, GeneratorAdapter gen);
+	default void emit(C context, ObjExpr objx, GeneratorAdapter gen, boolean oneShot) {
+		emit(context, objx, gen);
+	}
 
 	boolean hasJavaClass() ;
 
@@ -473,8 +476,12 @@ static class DefExpr implements Expr{
 			}
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-		objx.emitVar(gen, var);
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		emit(context, objx, gen, false);
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen, boolean oneShot){
+		objx.emitVar(gen, var, oneShot);
 
 		if (shadowsCoreMapping)
 		{
@@ -497,8 +504,8 @@ static class DefExpr implements Expr{
             if (initProvided || true)//includesExplicitMetadata((MapExpr) meta))
                 {
                 gen.dup();
-                meta.emit(C.EXPRESSION, objx, gen);
-                gen.checkCast(IPERSISTENTMAP_TYPE);
+                meta.emit(C.EXPRESSION, objx, gen, oneShot);
+//                gen.checkCast(IPERSISTENTMAP_TYPE);
                 gen.invokeVirtual(VAR_TYPE, setMetaMethod);
                 }
 			}
@@ -551,7 +558,7 @@ static class DefExpr implements Expr{
 					{
 					v = currentNS().intern(sym);
 					shadowsCoreMapping = true;
-					registerVar(v);
+					//registerVar(v);
 					}
 //					throw Util.runtimeException("Name conflict, can't def " + sym + " because namespace: " + currentNS().name +
 //					                    " refers to:" + v);
@@ -654,8 +661,12 @@ public static class VarExpr implements Expr, AssignableExpr{
 		return var.deref();
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-		objx.emitVarValue(gen,var);
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		emit(context,objx,gen,false);
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen, boolean oneShot){
+		objx.emitVarValue(gen,var,oneShot);
 		if(context == C.STATEMENT)
 			{
 			gen.pop();
@@ -678,7 +689,7 @@ public static class VarExpr implements Expr, AssignableExpr{
 
 	public void emitAssign(C context, ObjExpr objx, GeneratorAdapter gen,
 	                       Expr val){
-		objx.emitVar(gen, var);
+		objx.emitVar(gen, var, false);
 		val.emit(C.EXPRESSION, objx, gen);
 		gen.invokeVirtual(VAR_TYPE, setMethod);
 		if(context == C.STATEMENT)
@@ -697,8 +708,12 @@ public static class TheVarExpr implements Expr{
 		return var;
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-		objx.emitVar(gen, var);
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		emit(context,objx,gen,false);
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen, boolean oneShot){
+		objx.emitVar(gen, var, oneShot);
 		if(context == C.STATEMENT)
 			gen.pop();
 	}
@@ -1391,13 +1406,17 @@ static Class maybeJavaClass(Collection<Expr> exprs){
 
 static abstract class MethodExpr extends HostExpr{
 	static void emitArgsAsArray(IPersistentVector args, ObjExpr objx, GeneratorAdapter gen){
+		emitArgsAsArray(args,objx,gen,false);
+	}
+
+	static void emitArgsAsArray(IPersistentVector args, ObjExpr objx, GeneratorAdapter gen, boolean oneShot){
 		gen.push(args.count());
 		gen.newArray(OBJECT_TYPE);
 		for(int i = 0; i < args.count(); i++)
 			{
 			gen.dup();
 			gen.push(i);
-			((Expr) args.nth(i)).emit(C.EXPRESSION, objx, gen);
+			((Expr) args.nth(i)).emit(C.EXPRESSION, objx, gen, oneShot);
 			gen.arrayStore(OBJECT_TYPE);
 			}
 	}
@@ -1591,11 +1610,15 @@ static class InstanceMethodExpr extends MethodExpr{
 			throw new UnsupportedOperationException("Unboxed emit of unknown member");
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		emit(context,objx,gen,false);
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen, boolean oneShot){
 		if(method != null)
 			{
 			Type type = Type.getType(method.getDeclaringClass());
-			target.emit(C.EXPRESSION, objx, gen);
+			target.emit(C.EXPRESSION, objx, gen, oneShot);
 			//if(!method.getDeclaringClass().isInterface())
 			gen.checkCast(type);
 			MethodExpr.emitTypedArgs(objx, gen, method.getParameterTypes(), args);
@@ -1888,24 +1911,52 @@ static class UnresolvedVarExpr implements Expr{
 
 static class NumberExpr extends LiteralExpr implements MaybePrimitiveExpr{
 	final Number n;
-	public final int id;
+	//public final int id;
 
 	public NumberExpr(Number n){
 		this.n = n;
-		this.id = registerConstant(n);
+		//this.id = registerConstant(n);
 	}
 
 	Object val(){
 		return n;
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-		if(context != C.STATEMENT)
-			{
-			objx.emitConstant(gen, id);
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		emit(context,objx,gen,false);
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen, boolean oneshot){
+		if(context == C.STATEMENT)
+			return;
+
+		if(n instanceof Integer) {
+			if(oneshot) {
+				gen.push(((Integer) n).intValue());
+				gen.invokeStatic(Type.getType(Integer.class), Method.getMethod("Integer valueOf(int)"));
+			} else {
+				gen.push(BootstrapMethods.condy("int_num", Integer.class, Integer.class,
+						"Integer valueOf(int)", (int) n));
+			}
+		} else if(n instanceof Double) {
+			if(oneshot) {
+				gen.push(((Double) n).doubleValue());
+				gen.invokeStatic(Type.getType(Double.class), Method.getMethod("Double valueOf(double)"));
+			} else {
+				gen.push(BootstrapMethods.condy("double_num", Double.class, Double.class,
+						"Double valueOf(double)", (double) n));
+			}
+		} else if(n instanceof Long) {
+			if(oneshot) {
+				gen.push(((Long) n).longValue());
+				gen.invokeStatic(Type.getType(Long.class), Method.getMethod("Long valueOf(long)"));
+			} else {
+				gen.push(BootstrapMethods.condy("long_num", Long.class, Long.class,
+						"Long valueOf(long)", (long) n));
+			}
+		}
 //			emitUnboxed(context,objx,gen);
 //			HostExpr.emitBoxReturn(objx,gen,getJavaClass());
-			}
 	}
 
 	public boolean hasJavaClass() {
@@ -1964,19 +2015,14 @@ static class ConstantExpr extends LiteralExpr{
 		return v;
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-		objx.emitConstant(gen, id);
-
-		if(context == C.STATEMENT)
-			{
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen, boolean oneShot){
+		objx.emitConstant(gen, id, oneShot);
+		if (context == C.STATEMENT)
 			gen.pop();
-//			gen.loadThis();
-//			gen.invokeVirtual(OBJECT_TYPE, getClassMethod);
-//			gen.invokeVirtual(CLASS_TYPE, getClassLoaderMethod);
-//			gen.checkCast(DYNAMIC_CLASSLOADER_TYPE);
-//			gen.push(id);
-//			gen.invokeVirtual(DYNAMIC_CLASSLOADER_TYPE, getQuotedValMethod);
-			}
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+		emit(context, objx, gen, false);
 	}
 
 	public boolean hasJavaClass(){
@@ -2018,6 +2064,8 @@ static class ConstantExpr extends LiteralExpr{
 				return FALSE_EXPR;
 			if(v instanceof Number)
 				return NumberExpr.parse((Number)v);
+			else if(v instanceof Keyword)
+				return new KeywordExpr((Keyword) v);
 			else if(v instanceof String)
 				return new StringExpr((String) v);
 			else if(v instanceof IPersistentCollection && ((IPersistentCollection) v).count() == 0)
@@ -3055,7 +3103,11 @@ public static class MapExpr implements Expr{
 		return RT.map(ret);
 	}
 
-	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		emit(context,objx,gen,false);
+	}
+
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen, boolean oneShot){
 		boolean allKeysConstant = true;
 		boolean allConstantKeysUnique = true;
 		IPersistentSet constantKeys = PersistentHashSet.EMPTY;
@@ -3073,7 +3125,7 @@ public static class MapExpr implements Expr{
 			else
 				allKeysConstant = false;
 			}
-		MethodExpr.emitArgsAsArray(keyvals, objx, gen);
+		MethodExpr.emitArgsAsArray(keyvals, objx, gen, oneShot);
 		if((allKeysConstant && allConstantKeysUnique) || (keyvals.count() <= 2))
 			gen.invokeStatic(RT_TYPE, mapUniqueKeysMethod);
 		else
@@ -3753,7 +3805,7 @@ static class InvokeExpr implements Expr{
 		gen.putStatic(objx.objtype, objx.cachedClassName(siteIndex),CLASS_TYPE); //target
 
 		gen.mark(callLabel); //target
-		objx.emitVar(gen, v);
+		objx.emitVar(gen, v, false);
 		gen.invokeVirtual(VAR_TYPE, Method.getMethod("Object getRawRoot()")); //target, proto-fn
 		gen.swap();
 		emitArgsAndCall(1, context,objx,gen);
@@ -3875,13 +3927,13 @@ static class InvokeExpr implements Expr{
 				}
 			}
 
-		if(fexpr instanceof KeywordExpr && RT.count(form) == 2 && KEYWORD_CALLSITES.isBound())
-			{
-//			fexpr = new ConstantExpr(new KeywordCallSite(((KeywordExpr)fexpr).k));
-			Expr target = analyze(context, RT.second(form));
-			return new KeywordInvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form),
-			                             (KeywordExpr) fexpr, target);
-			}
+//		if(fexpr instanceof KeywordExpr && RT.count(form) == 2 && KEYWORD_CALLSITES.isBound())
+//			{
+////			fexpr = new ConstantExpr(new KeywordCallSite(((KeywordExpr)fexpr).k));
+//			Expr target = analyze(context, RT.second(form));
+//			return new KeywordInvokeExpr((String) SOURCE.deref(), lineDeref(), columnDeref(), tagOf(form),
+//			                             (KeywordExpr) fexpr, target);
+//			}
 		PersistentVector args = PersistentVector.EMPTY;
 		for(ISeq s = RT.seq(form.next()); s != null; s = s.next())
 			{
@@ -4307,7 +4359,7 @@ static public class ObjExpr implements Expr{
 		ClassVisitor cv = cw;
 //		ClassVisitor cv = new TraceClassVisitor(new CheckClassAdapter(cw), new PrintWriter(System.out));
 		//ClassVisitor cv = new TraceClassVisitor(cw, new PrintWriter(System.out));
-		cv.visit(V1_8, ACC_PUBLIC + ACC_SUPER + ACC_FINAL, internalName, null,superName,interfaceNames);
+		cv.visit(V11, ACC_PUBLIC + ACC_SUPER + ACC_FINAL, internalName, null,superName,interfaceNames);
 //		         superName != null ? superName :
 //		         (isVariadic() ? "clojure/lang/RestFn" : "clojure/lang/AFunction"), null);
 		String source = (String) SOURCE.deref();
@@ -4579,14 +4631,13 @@ static public class ObjExpr implements Expr{
 		emitStatics(cv);
 		emitMethods(cv);
 
-        //static fields for constants
-        for(int i = 0; i < constants.count(); i++)
-            {
-            if(usedConstants.contains(i))
-                cv.visitField(ACC_PUBLIC + ACC_FINAL
-                          + ACC_STATIC, constantName(i), constantType(i).getDescriptor(),
-                          null, null);
-            }
+//        //static fields for constants
+//        for(int i = 0; i < constants.count(); i++)
+//            {
+//            if(usedConstants.contains(i))
+//                cv.visitField(ACC_PUBLIC + ACC_STATIC, constantName(i), constantType(i).getDescriptor(),
+//                          null, null);
+//            }
 
         //static fields for lookup sites
         for(int i = 0; i < keywordCallsites.count(); i++)
@@ -4598,22 +4649,22 @@ static public class ObjExpr implements Expr{
                           null, null);
             }
 
+		if(constants.count() > 0)
+			emitConstants(cv);
+
         //static init for constants, keywords and vars
-        GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
-                                                          Method.getMethod("void <clinit> ()"),
-                                                          null,
-                                                          null,
-                                                          cv);
-        clinitgen.visitCode();
-        clinitgen.visitLineNumber(line, clinitgen.mark());
+		if (isDeftype()) {
+			GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
+					Method.getMethod("void <clinit> ()"),
+					null,
+					null,
+					cv);
+			clinitgen.visitCode();
+			clinitgen.visitLineNumber(line, clinitgen.mark());
 
-        if(constants.count() > 0)
-            {
-            emitConstants(clinitgen);
-            }
 
-        if(keywordCallsites.count() > 0)
-            emitKeywordCallsites(clinitgen);
+			if (keywordCallsites.count() > 0)
+				emitKeywordCallsites(clinitgen);
 
       		/*
       		for(int i=0;i<varCallsites.count();i++)
@@ -4643,25 +4694,25 @@ static public class ObjExpr implements Expr{
       			}
               */
 
-        if(isDeftype() && RT.booleanCast(RT.get(opts, loadNs))) {
-              String nsname = ((Symbol)RT.second(src)).getNamespace();
-              if (!nsname.equals("clojure.core")) {
-                  clinitgen.push("clojure.core");
-                  clinitgen.push("require");
-                  clinitgen.invokeStatic(RT_TYPE, Method.getMethod("clojure.lang.Var var(String,String)"));
-                  clinitgen.invokeVirtual(VAR_TYPE,Method.getMethod("Object getRawRoot()"));
-                  clinitgen.checkCast(IFN_TYPE);
-                  clinitgen.push(nsname);
-                  clinitgen.invokeStatic(SYMBOL_TYPE, Method.getMethod("clojure.lang.Symbol create(String)"));
-                  clinitgen.invokeInterface(IFN_TYPE, Method.getMethod("Object invoke(Object)"));
-                  clinitgen.pop();
-              }
-          }
+			if (isDeftype() && RT.booleanCast(RT.get(opts, loadNs))) {
+				String nsname = ((Symbol) RT.second(src)).getNamespace();
+				if (!nsname.equals("clojure.core")) {
+					clinitgen.push("clojure.core");
+					clinitgen.push("require");
+					clinitgen.invokeStatic(RT_TYPE, Method.getMethod("clojure.lang.Var var(String,String)"));
+					clinitgen.invokeVirtual(VAR_TYPE, Method.getMethod("Object getRawRoot()"));
+					clinitgen.checkCast(IFN_TYPE);
+					clinitgen.push(nsname);
+					clinitgen.invokeStatic(SYMBOL_TYPE, Method.getMethod("clojure.lang.Symbol create(String)"));
+					clinitgen.invokeInterface(IFN_TYPE, Method.getMethod("Object invoke(Object)"));
+					clinitgen.pop();
+				}
+			}
 
-        clinitgen.returnValue();
+			clinitgen.returnValue();
 
-        clinitgen.endMethod();
-
+			clinitgen.endMethod();
+		}
 		//end of class
 		cv.visitEnd();
 
@@ -4701,12 +4752,16 @@ static public class ObjExpr implements Expr{
 			{
 			gen.dup();
 			gen.push(i);
-			emitValue(it.next(), gen);
+			emitValue(it.next(), gen, false);
 			gen.arrayStore(OBJECT_TYPE);
 			}
 	}
 
 	void emitValue(Object value, GeneratorAdapter gen){
+		emitValue(value, gen, true);
+	}
+
+	void emitValue(Object value, GeneratorAdapter gen, boolean root){
 		boolean partial = true;
 		//System.out.println(value.getClass().toString());
 
@@ -4776,17 +4831,8 @@ static public class ObjExpr implements Expr{
 			}
 		else if(value instanceof Keyword)
 			{
-			gen.push(((Keyword) value).sym.ns);
-			gen.push(((Keyword) value).sym.name);
-			gen.invokeStatic(RT_TYPE,
-							 Method.getMethod("clojure.lang.Keyword keyword(String,String)"));
+				emitKeyword(gen, (Keyword) value);
 			}
-//						else if(value instanceof KeywordCallSite)
-//								{
-//								emitValue(((KeywordCallSite) value).k.sym, gen);
-//								gen.invokeStatic(Type.getType(KeywordCallSite.class),
-//								                 Method.getMethod("clojure.lang.KeywordCallSite create(clojure.lang.Symbol)"));
-//								}
 		else if(value instanceof Var)
 			{
 			Var var = (Var) value;
@@ -4805,7 +4851,7 @@ static public class ObjExpr implements Expr{
 				Symbol field = (Symbol) s.first();
 				Class k = tagClass(tagOf(field));
 				Object val = Reflector.getInstanceField(value, munge(field.name));
-				emitValue(val, gen);
+				emitValue(val, gen, false);
 
 				if(k.isPrimitive())
 					{
@@ -4821,7 +4867,7 @@ static public class ObjExpr implements Expr{
 		else if(value instanceof IRecord)
 			{
 			Method createMethod = Method.getMethod(value.getClass().getName() + " create(clojure.lang.IPersistentMap)");
-            emitValue(PersistentArrayMap.create((java.util.Map) value), gen);
+            emitValue(PersistentArrayMap.create((java.util.Map) value), gen, false);
 			gen.invokeStatic(getType(value.getClass()), createMethod);
 			}
 		else if(value instanceof IPersistentMap)
@@ -4834,7 +4880,7 @@ static public class ObjExpr implements Expr{
 				}
 			emitListAsObjectArray(entries, gen);
 			gen.invokeStatic(RT_TYPE,
-							 Method.getMethod("clojure.lang.IPersistentMap map(Object[])"));
+							 Method.getMethod("clojure.lang.IPersistentMap mapUniqueKeys(Object[])"));
 			}
 		else if(value instanceof IPersistentVector)
 			{
@@ -4842,7 +4888,7 @@ static public class ObjExpr implements Expr{
             if(args.count() <= Tuple.MAX_SIZE)
                 {
                 for(int i = 0; i < args.count(); i++) {
-          			emitValue(args.nth(i), gen);
+          			emitValue(args.nth(i), gen, false);
           			}
                 gen.invokeStatic(TUPLE_TYPE, createTupleMethods[args.count()]);
                 }
@@ -4868,11 +4914,11 @@ static public class ObjExpr implements Expr{
 		else if(value instanceof ISeq || value instanceof IPersistentList)
 			{
 			emitListAsObjectArray(value, gen);
-			gen.invokeStatic(Type.getType(java.util.Arrays.class),
-							 Method.getMethod("java.util.List asList(Object[])"));
-			gen.invokeStatic(Type.getType(PersistentList.class),
+//			gen.invokeStatic(Type.getType(java.util.Arrays.class),
+//							 Method.getMethod("java.util.List asList(Object[])"));
+			gen.invokeStatic(Type.getType(ArraySeq.class),
 							 Method.getMethod(
-									 "clojure.lang.IPersistentList create(java.util.List)"));
+									 "clojure.lang.ArraySeq create(Object[])"));
 			}
 		else if(value instanceof Pattern)
 			{
@@ -4913,7 +4959,7 @@ static public class ObjExpr implements Expr{
 				{
 				gen.checkCast(IOBJ_TYPE);
                 Object m = ((IObj) value).meta();
-				emitValue(elideMeta(m), gen);
+				emitValue(elideMeta(m), gen, false);
 				gen.checkCast(IPERSISTENTMAP_TYPE);
 				gen.invokeInterface(IOBJ_TYPE,
 				                    Method.getMethod("clojure.lang.IObj withMeta(clojure.lang.IPersistentMap)"));
@@ -4922,18 +4968,26 @@ static public class ObjExpr implements Expr{
 	}
 
 
-	void emitConstants(GeneratorAdapter clinitgen){
+	void emitConstants(ClassVisitor cv){
 		try
 			{
-			Var.pushThreadBindings(RT.map(RT.PRINT_DUP, RT.T));
+			Var.pushThreadBindings(RT.mapUniqueKeys(RT.PRINT_DUP, RT.T));
 
 			for(int i = 0; i < constants.count(); i++)
 				{
                 if(usedConstants.contains(i))
                     {
-                    emitValue(constants.nth(i), clinitgen);
-                    clinitgen.checkCast(constantType(i));
-                    clinitgen.putStatic(objtype, constantName(i), constantType(i));
+							Method ms = new Method(constantInitMethodName(i), constantType(i), new Type[0]);
+							GeneratorAdapter constgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
+									ms,
+									null,
+									null,
+									cv);
+							constgen.visitCode();
+							emitValue(constants.nth(i), constgen);
+							constgen.checkCast(constantType(i));
+							constgen.returnValue();
+							constgen.endMethod();
                     }
 				}
 			}
@@ -5174,40 +5228,69 @@ static public class ObjExpr implements Expr{
 			gen.visitVarInsn(Type.getType(primc).getOpcode(Opcodes.ILOAD), lb.idx);
 	}
 
-	public void emitVar(GeneratorAdapter gen, Var var){
-		Integer i = (Integer) vars.valAt(var);
-		emitConstant(gen, i);
-		//gen.getStatic(fntype, munge(var.sym.toString()), VAR_TYPE);
+	public void emitVar(GeneratorAdapter gen, Var var, boolean oneShot){
+		if (oneShot) {
+			gen.push(var.ns.name.toString());
+			gen.push(var.sym.toString());
+			gen.invokeStatic(RT_TYPE, Method.getMethod("clojure.lang.Var var(String,String)"));
+		} else {
+			gen.push(BootstrapMethods.condy("varGet", Var.class, RT.class,
+					"clojure.lang.Var var(String, String)", var.ns.name.name, var.sym.name));
+		}
 	}
 
 	final static Method varGetMethod = Method.getMethod("Object get()");
 	final static Method varGetRawMethod = Method.getMethod("Object getRawRoot()");
 
-	public void emitVarValue(GeneratorAdapter gen, Var v){
-		Integer i = (Integer) vars.valAt(v);
-		if(!v.isDynamic())
-			{
-			emitConstant(gen, i);
+	public void emitVarValue(GeneratorAdapter gen, Var var, boolean oneShot){
+		emitVar(gen,var,oneShot);
+		if(!var.isDynamic())
 			gen.invokeVirtual(VAR_TYPE, varGetRawMethod);
-			}
 		else
-			{
-			emitConstant(gen, i);
 			gen.invokeVirtual(VAR_TYPE, varGetMethod);
-			}
 	}
 
 	public void emitKeyword(GeneratorAdapter gen, Keyword k){
-		Integer i = (Integer) keywords.valAt(k);
-		emitConstant(gen, i);
+		String ns = k.getNamespace();
+		String name = k.getName();
+		gen.push(ns != null ?
+				BootstrapMethods.condy("keyword", Keyword.class, Keyword.class,
+						"clojure.lang.Keyword intern(String, String)", ns, name)
+				: BootstrapMethods.condy("keyword", Keyword.class, BootstrapMethods.class,
+				"clojure.lang.Keyword keywordUnk(String)", name));
+//		Integer i = (Integer) keywords.valAt(k);
+//		emitConstant(gen, i);
 //		gen.getStatic(fntype, munge(k.sym.toString()), KEYWORD_TYPE);
 	}
 
-	public void emitConstant(GeneratorAdapter gen, int id){
-        usedConstants = (IPersistentSet) usedConstants.cons(id);
-		gen.getStatic(objtype, constantName(id), constantType(id));
+	public void emitConstant(GeneratorAdapter gen, int id, boolean oneShot){
+		usedConstants = (IPersistentSet) usedConstants.cons(id);
+		Method ms = new Method(constantInitMethodName(id), constantType(id), new Type[0]);
+		if (oneShot) {
+			gen.invokeStatic(objtype, ms);
+		} else {
+			Handle h = new Handle(Opcodes.H_INVOKESTATIC, internalName,
+					constantInitMethodName(id),
+					ms.getDescriptor(),
+					false);
+			gen.push(new ConstantDynamic(constantInitMethodName(id),
+					constantType(id).getDescriptor(),
+					BootstrapMethods.CB_INVOKE,
+					h));
+		}
 	}
 
+//	public void emitConstant2(GeneratorAdapter gen, int id){
+//		Object o = constants.nth(id);
+//		Class c = clojure.lang.Util.classOf(o);
+//		if (c!=null) {
+//
+//		}
+//	}
+
+	String constantInitMethodName(int id){
+		return CONST_PREFIX + "init" + id;
+	}
 
 	String constantName(int id){
 		return CONST_PREFIX + id;
@@ -6767,7 +6850,7 @@ private static Expr analyze(C context, Object form, String name) {
 		if(fclass == Symbol.class)
 			return analyzeSymbol((Symbol) form);
 		else if(fclass == Keyword.class)
-			return registerKeyword((Keyword) form);
+			return new KeywordExpr((Keyword) form);
 		else if(form instanceof Number)
 			return NumberExpr.parse((Number) form);
 		else if(fclass == String.class)
@@ -7209,16 +7292,16 @@ private static int registerConstant(Object o){
 }
 
 private static KeywordExpr registerKeyword(Keyword keyword){
-	if(!KEYWORDS.isBound())
+	//if(!KEYWORDS.isBound())
 		return new KeywordExpr(keyword);
 
-	IPersistentMap keywordsMap = (IPersistentMap) KEYWORDS.deref();
-	Object id = RT.get(keywordsMap, keyword);
-	if(id == null)
-		{
-		KEYWORDS.set(RT.assoc(keywordsMap, keyword, registerConstant(keyword)));
-		}
-	return new KeywordExpr(keyword);
+//	IPersistentMap keywordsMap = (IPersistentMap) KEYWORDS.deref();
+//	Object id = RT.get(keywordsMap, keyword);
+//	if(id == null)
+//		{
+//		KEYWORDS.set(RT.assoc(keywordsMap, keyword, registerConstant(keyword)));
+//		}
+//	return new KeywordExpr(keyword);
 //	KeywordExpr ke = (KeywordExpr) RT.get(keywordsMap, keyword);
 //	if(ke == null)
 //		KEYWORDS.set(RT.assoc(keywordsMap, keyword, ke = new KeywordExpr(keyword)));
@@ -7324,7 +7407,7 @@ private static Expr analyzeSymbol(Symbol sym) {
 			throw Util.runtimeException("Can't take value of a macro: " + v);
 		if(RT.booleanCast(RT.get(v.meta(),RT.CONST_KEY)))
 			return analyze(C.EXPRESSION, RT.list(QUOTE, v.get()));
-		registerVar(v);
+		//registerVar(v);
 		return new VarExpr(v, tag);
 		}
 	else if(o instanceof Class)
@@ -7494,8 +7577,8 @@ static Var lookupVar(Symbol sym, boolean internNew, boolean registerMacro) {
 				throw Util.runtimeException("Expecting var, but " + sym + " is mapped to " + o);
 				}
 			}
-	if(var != null && (!var.isMacro() || registerMacro))
-		registerVar(var);
+	//if(var != null && (!var.isMacro() || registerMacro))
+		//registerVar(var);
 	return var;
 }
 static Var lookupVar(Symbol sym, boolean internNew) {
@@ -7727,7 +7810,8 @@ static void compile1(GeneratorAdapter gen, ObjExpr objx, Object form) {
 			objx.keywords = (IPersistentMap) KEYWORDS.deref();
 			objx.vars = (IPersistentMap) VARS.deref();
 			objx.constants = (PersistentVector) CONSTANTS.deref();
-			expr.emit(C.EXPRESSION, objx, gen);
+			expr.emit(C.EXPRESSION, objx, gen, true);
+			gen.pop();
 			expr.eval();
 			}
 		}
@@ -7779,7 +7863,7 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 		objx.objtype = Type.getObjectType(objx.internalName);
 		ClassWriter cw = classWriter();
 		ClassVisitor cv = cw;
-		cv.visit(V1_8, ACC_PUBLIC + ACC_SUPER, objx.internalName, null, "java/lang/Object", null);
+		cv.visit(V11, ACC_PUBLIC + ACC_SUPER, objx.internalName, null, "java/lang/Object", null);
 
 		//static load method
 		GeneratorAdapter gen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
@@ -7803,88 +7887,97 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 		gen.returnValue();
 		gen.endMethod();
 
-		//static fields for constants
-		for(int i = 0; i < objx.constants.count(); i++)
-			{
-            if(objx.usedConstants.contains(i))
-			    cv.visitField(ACC_PUBLIC + ACC_FINAL + ACC_STATIC, objx.constantName(i), objx.constantType(i).getDescriptor(),
-			              null, null);
+		//static method inits for constants
+		for (int i = 0; i < objx.constants.count(); i++) {
+			if (objx.usedConstants.contains(i)) {
+				Method ms = new Method(objx.constantInitMethodName(i), objx.constantType(i), new Type[0]);
+				GeneratorAdapter constgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
+						ms,
+						null,
+						null,
+						cv);
+				constgen.visitCode();
+				objx.emitValue(objx.constants.nth(i), constgen);
+				constgen.checkCast(objx.constantType(i));
+				constgen.returnValue();
+				constgen.endMethod();
 			}
+		}
 
-		final int INITS_PER = 100;
-		int numInits =  objx.constants.count() / INITS_PER;
-		if(objx.constants.count() % INITS_PER != 0)
-			++numInits;
+//		final int INITS_PER = 100;
+//		int numInits =  objx.constants.count() / INITS_PER;
+//		if(objx.constants.count() % INITS_PER != 0)
+//			++numInits;
 
-		for(int n = 0;n<numInits;n++)
-			{
-			GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
-			                                                  Method.getMethod("void __init" + n + "()"),
-			                                                  null,
-			                                                  null,
-			                                                  cv);
-			clinitgen.visitCode();
-			try
-				{
-				Var.pushThreadBindings(RT.map(RT.PRINT_DUP, RT.T));
-
-				for(int i = n*INITS_PER; i < objx.constants.count() && i < (n+1)*INITS_PER; i++)
-					{
-                    if(objx.usedConstants.contains(i))
-                        {
-                        objx.emitValue(objx.constants.nth(i), clinitgen);
-                        clinitgen.checkCast(objx.constantType(i));
-                        clinitgen.putStatic(objx.objtype, objx.constantName(i), objx.constantType(i));
-                        }
-					}
-				}
-			finally
-				{
-				Var.popThreadBindings();
-				}
-			clinitgen.returnValue();
-			clinitgen.endMethod();
-			}
+//		for(int n = 0;n<numInits;n++)
+//			{
+//			GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
+//			                                                  Method.getMethod("void __init" + n + "()"),
+//			                                                  null,
+//			                                                  null,
+//			                                                  cv);
+//			clinitgen.visitCode();
+//			try
+//				{
+//				Var.pushThreadBindings(RT.map(RT.PRINT_DUP, RT.T));
+//
+//				for(int i = n*INITS_PER; i < objx.constants.count() && i < (n+1)*INITS_PER; i++)
+//					{
+//                    if(objx.usedConstants.contains(i))
+//                        {
+//                        objx.emitValue(objx.constants.nth(i), clinitgen);
+//                        clinitgen.checkCast(objx.constantType(i));
+//                        clinitgen.putStatic(objx.objtype, objx.constantName(i), objx.constantType(i));
+//                        }
+//					}
+//				}
+//			finally
+//				{
+//				Var.popThreadBindings();
+//				}
+//			clinitgen.returnValue();
+//			clinitgen.endMethod();
+//			}
 
 		//static init for constants, keywords and vars
-		GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
-		                                                  Method.getMethod("void <clinit> ()"),
-		                                                  null,
-		                                                  null,
-		                                                  cv);
-		clinitgen.visitCode();
-		Label startTry = clinitgen.newLabel();
-		Label endTry = clinitgen.newLabel();
-		Label end = clinitgen.newLabel();
-		Label finallyLabel = clinitgen.newLabel();
+//		GeneratorAdapter clinitgen = new GeneratorAdapter(ACC_PUBLIC + ACC_STATIC,
+//		                                                  Method.getMethod("void nsinit()"),
+//		                                                  null,
+//		                                                  null,
+//		                                                  cv);
+//		clinitgen.visitCode();
+//		Label startTry = clinitgen.newLabel();
+//		Label endTry = clinitgen.newLabel();
+//		Label end = clinitgen.newLabel();
+//		Label finallyLabel = clinitgen.newLabel();
 
 //		if(objx.constants.count() > 0)
 //			{
 //			objx.emitConstants(clinitgen);
 //			}
-		for(int n = 0;n<numInits;n++)
-			clinitgen.invokeStatic(objx.objtype, Method.getMethod("void __init" + n + "()"));
+//		for(int n = 0;n<numInits;n++)
+//			clinitgen.invokeStatic(objx.objtype, Method.getMethod("void __init" + n + "()"));
 
-		clinitgen.push(objx.internalName.replace('/','.'));
-		clinitgen.invokeStatic(RT_TYPE, Method.getMethod("Class classForName(String)"));
-		clinitgen.invokeVirtual(CLASS_TYPE,Method.getMethod("ClassLoader getClassLoader()"));
-		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void pushNSandLoader(ClassLoader)"));
-		clinitgen.mark(startTry);
-		clinitgen.invokeStatic(objx.objtype, Method.getMethod("void load()"));
-		clinitgen.mark(endTry);
-		clinitgen.invokeStatic(VAR_TYPE, Method.getMethod("void popThreadBindings()"));
-		clinitgen.goTo(end);
-
-		clinitgen.mark(finallyLabel);
-		//exception should be on stack
-		clinitgen.invokeStatic(VAR_TYPE, Method.getMethod("void popThreadBindings()"));
-		clinitgen.throwException();
-		clinitgen.mark(end);
-		clinitgen.visitTryCatchBlock(startTry, endTry, finallyLabel, null);
-
-		//end of static init
-		clinitgen.returnValue();
-		clinitgen.endMethod();
+//		clinitgen.push(objx.internalName.replace('/','.'));
+//		clinitgen.invokeStatic(RT_TYPE, Method.getMethod("Class classForName(String)"));
+//		clinitgen.invokeVirtual(CLASS_TYPE,Method.getMethod("ClassLoader getClassLoader()"));
+//		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void pushNSandLoader(ClassLoader)"));
+//		clinitgen.mark(startTry);
+//		clinitgen.invokeStatic(objx.objtype, Method.getMethod("void load()"));
+//		clinitgen.mark(endTry);
+//		clinitgen.invokeStatic(VAR_TYPE, Method.getMethod("void popThreadBindings()"));
+//		clinitgen.goTo(end);
+//
+//		clinitgen.mark(finallyLabel);
+//		//exception should be on stack
+//		clinitgen.invokeStatic(VAR_TYPE, Method.getMethod("void popThreadBindings()"));
+//		clinitgen.throwException();
+//		clinitgen.mark(end);
+//		clinitgen.visitTryCatchBlock(startTry, endTry, finallyLabel, null);
+//
+//		//end of static init
+//		clinitgen.returnValue();
+//		clinitgen.endMethod();
 
 		//end of class
 		cv.visitEnd();
@@ -8099,7 +8192,7 @@ static public class NewInstanceExpr extends ObjExpr{
 	static Class compileStub(String superName, NewInstanceExpr ret, String[] interfaceNames, Object frm){
 	    ClassWriter cw = classWriter();
 	    ClassVisitor cv = cw;
-		cv.visit(V1_8, ACC_PUBLIC + ACC_SUPER, COMPILE_STUB_PREFIX + "/" + ret.internalName,
+		cv.visit(V11, ACC_PUBLIC + ACC_SUPER, COMPILE_STUB_PREFIX + "/" + ret.internalName,
 		         null,superName,interfaceNames);
 
 		//instance fields for closed-overs
@@ -9035,9 +9128,11 @@ public static class CaseExpr implements Expr, MaybePrimitiveExpr{
 				Map.Entry e = (Map.Entry) o;
 				Integer minhash = ((Number)e.getKey()).intValue();
                 Object pair = e.getValue(); // [test-val then-expr]
-                Expr testExpr = testType == intKey
-                                    ? NumberExpr.parse(((Number)RT.first(pair)).intValue())
-                                    : new ConstantExpr(RT.first(pair));
+					Object testVal = RT.first(pair);
+					Expr testExpr = testType == intKey
+							? NumberExpr.parse(((Number) testVal).intValue())
+							: testVal instanceof Keyword ? new KeywordExpr((Keyword) testVal) :
+							new ConstantExpr(testVal);
                 tests.put(minhash, testExpr);
 
                 Expr thenExpr;
