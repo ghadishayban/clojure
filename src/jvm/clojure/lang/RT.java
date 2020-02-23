@@ -12,6 +12,9 @@
 
 package clojure.lang;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.net.MalformedURLException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Callable;
@@ -305,7 +308,7 @@ public static boolean checkSpecAsserts = Boolean.getBoolean("clojure.spec.check-
 public static boolean instrumentMacros = ! Boolean.getBoolean("clojure.spec.skip-macros");
 static volatile boolean CHECK_SPECS = false;
 
-static{
+static void loadPrimordial() {
 	Keyword arglistskw = Keyword.intern(null, "arglists");
 	Symbol namesym = Symbol.intern("name");
 	OUT.setTag(Symbol.intern("java.io.Writer"));
@@ -446,7 +449,7 @@ static public void load(String scriptbase, boolean failIfNotFound) throws IOExce
 					RT.mapUniqueKeys(CURRENT_NS, CURRENT_NS.deref(),
 					       WARN_ON_REFLECTION, WARN_ON_REFLECTION.deref()
 							,RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref()));
-			loaded = (loadClassForName(scriptbase.replace('/', '.') + LOADER_SUFFIX) != null);
+			loaded = loadClass(scriptbase.replace('/', '.') + LOADER_SUFFIX);
 		}
 		finally {
 			Var.popThreadBindings();
@@ -467,9 +470,10 @@ static public void init() {
 	doInit();
 }
 
-private static boolean INIT = false; // init guard
+private static volatile boolean INIT = false; // init guard
 private synchronized static void doInit() {
 	if(INIT) {return;} else {INIT=true;}
+	loadPrimordial();
 
 	Var.pushThreadBindings(
 			RT.mapUniqueKeys(CURRENT_NS, CURRENT_NS.deref(),
@@ -2164,7 +2168,7 @@ static public ClassLoader makeClassLoader(){
 	return (ClassLoader) AccessController.doPrivileged(new PrivilegedAction(){
 		public Object run(){
             try{
-            Var.pushThreadBindings(RT.map(USE_CONTEXT_CLASSLOADER, RT.T));
+            Var.pushThreadBindings(RT.mapUniqueKeys(USE_CONTEXT_CLASSLOADER, RT.T));
 //			getRootClassLoader();
 			return new DynamicClassLoader(baseLoader());
             }
@@ -2237,6 +2241,31 @@ static public Class loadClassForName(String name) {
 			throw Util.sneakyThrow(e);
 		}
 	return classForName(name);
+}
+
+static private boolean loadClass(String name) {
+	Class klazz;
+	try {
+		klazz = classForName(name, true, baseLoader());
+	} catch (Exception e)
+		{
+			if (e instanceof ClassNotFoundException)
+				return false;
+			else
+				throw Util.sneakyThrow(e);
+		}
+	try {
+		//System.out.println("loading ns " + name);
+		Compiler.pushNSandLoader(klazz.getClassLoader());
+		MethodHandles.publicLookup()
+				.findStatic(klazz, "load", MethodType.methodType(void.class))
+				.invokeExact();
+	} catch (Throwable e) {
+		Util.sneakyThrow(e);
+	} finally {
+		Var.popThreadBindings();
+	}
+	return true;
 }
 
 static public float aget(float[] xs, int i){
