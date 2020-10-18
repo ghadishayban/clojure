@@ -128,6 +128,7 @@ public Obj withMeta(IPersistentMap meta){
 				case SVAL:
 					if (casState(SVAL, EXCLUSIVE))
 						return svalToSeq(o);
+					break;
 				case SEQ:
 					return (ISeq) o;
 				case ERROR:
