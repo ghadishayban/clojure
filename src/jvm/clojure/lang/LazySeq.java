@@ -12,22 +12,41 @@
 
 package clojure.lang;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.*;
 
 public final class LazySeq extends Obj implements ISeq, Sequential, List, IPending, IHashEq{
 
-private IFn fn;
-private Object sv;
-private ISeq s;
+	private static final VarHandle STATE;
+	private static final byte UNREALIZED = 0;
+	private static final byte SVAL = 1;
+	private static final byte SEQ = 2;
+	private static final byte ERROR = 3;
+	private static final byte EXCLUSIVE = 4;
+	private static final byte CONTENDED = 5;
+
+	static {
+		try {
+			MethodHandles.Lookup l = MethodHandles.lookup();
+			STATE = l.findVarHandle(LazySeq.class, "state", byte.class);
+		} catch (ReflectiveOperationException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+
+	private volatile Object obj;
+	private volatile byte state;
 
 public LazySeq(IFn fn){
-	this.fn = fn;
+	this.obj = fn;
+	this.state = UNREALIZED;
 }
 
 private LazySeq(IPersistentMap meta, ISeq s){
 	super(meta);
-	this.fn = null;
-	this.s = s;
+	this.obj = s;
+	this.state = SEQ;
 }
 
 public Obj withMeta(IPersistentMap meta){
@@ -36,31 +55,131 @@ public Obj withMeta(IPersistentMap meta){
 	return new LazySeq(meta, seq());
 }
 
-final synchronized Object sval(){
-	if(fn != null)
-		{
-                sv = fn.invoke();
-                fn = null;
+	static private ISeq asSeq(Object sv) {
+		if (sv != null) {
+			Object ls = sv;
+			while (ls instanceof LazySeq)
+				ls = ((LazySeq) ls).sval();
+			return RT.seq(ls);
 		}
-	if(sv != null)
-		return sv;
-	return s;
-}
+		return null;
+	}
 
-final synchronized public ISeq seq(){
-	sval();
-	if(sv != null)
-		{
-		Object ls = sv;
-		sv = null;
-		while(ls instanceof LazySeq)
-			{
-			ls = ((LazySeq)ls).sval();
+	final private Object sval() {
+		for (; ; ) {
+			byte s = state;
+			Object o = obj;
+			switch (s) {
+				case UNREALIZED:
+					if (casState(UNREALIZED, EXCLUSIVE))
+						return thunkToSval(o);
+					break;
+				case SVAL:
+					return o;
+				case SEQ:
+					return o;
+				case ERROR:
+					Util.sneakyThrow((Throwable) o);
+				case EXCLUSIVE:
+					casState(EXCLUSIVE, CONTENDED);
+					break;
+				case CONTENDED:
+					await();
+					break;
 			}
-		s = RT.seq(ls);
 		}
-	return s;
-}
+	}
+
+	private boolean casState(byte witness, byte value) {
+		return STATE.compareAndSet(this, witness, value);
+	}
+
+	private void signalState(byte newState) {
+		if (casState(EXCLUSIVE, newState)) {
+			return;
+		}
+		if (casState(CONTENDED, newState)) {
+			synchronized (this) {
+				notifyAll();
+			}
+			return;
+		}
+		throw new IllegalStateException();
+	}
+
+	private void await() {
+		synchronized (this) {
+			try {
+				wait();
+			} catch (InterruptedException e) {
+			}
+		}
+	}
+
+	final public ISeq seq() {
+		for (; ; ) {
+			byte s = state;
+			Object o = obj;
+			switch (s) {
+				case UNREALIZED:
+					if (casState(UNREALIZED, EXCLUSIVE))
+						return thunkToSeq(o);
+					break;
+				case SVAL:
+					if (casState(SVAL, EXCLUSIVE))
+						return svalToSeq(o);
+				case SEQ:
+					return (ISeq) o;
+				case ERROR:
+					Util.sneakyThrow((Throwable) o);
+				case EXCLUSIVE:
+					casState(EXCLUSIVE, CONTENDED);
+					break;
+				case CONTENDED:
+					await();
+					break;
+			}
+		}
+	}
+
+	private Object thunkToSval(Object thunk) {
+		try {
+			Object ret = ((IFn) thunk).invoke();
+			obj = ret;
+			signalState(SVAL);
+			return ret;
+		} catch (Throwable e) {
+			obj = e;
+			signalState(ERROR);
+			throw e;
+		}
+	}
+
+	private ISeq svalToSeq(Object sval) {
+		try {
+			ISeq ret = asSeq(sval);
+			obj = ret;
+			signalState(SEQ);
+			return ret;
+		} catch (Throwable e) {
+			obj = e;
+			signalState(ERROR);
+			throw e;
+		}
+	}
+
+	private ISeq thunkToSeq(Object thunk) {
+		try {
+			ISeq ret = asSeq(((IFn) thunk).invoke());
+			obj = ret;
+			signalState(SEQ);
+			return ret;
+		} catch (Throwable e) {
+			obj = e;
+			signalState(ERROR);
+			throw e;
+		}
+	}
 
 public int count(){
 	int c = 0;
@@ -70,21 +189,21 @@ public int count(){
 }
 
 public Object first(){
-	seq();
+	ISeq s = seq();
 	if(s == null)
 		return null;
 	return s.first();
 }
 
 public ISeq next(){
-	seq();
+	ISeq s = seq();
 	if(s == null)
 		return null;
 	return s.next();	
 }
 
 public ISeq more(){
-	seq();
+	ISeq s = seq();
 	if(s == null)
 		return PersistentList.EMPTY;
 	return s.more();
@@ -242,7 +361,7 @@ public boolean addAll(int index, Collection c){
 }
 
 
-synchronized public boolean isRealized(){
-	return fn == null;
+public boolean isRealized(){
+	return state != SVAL && state != SEQ;
 }
 }
