@@ -45,18 +45,26 @@ public final class KeywordLookupSite3 extends MutableCallSite {
         return RT.get(target, k);
     }
 
+//    static MethodHandle fieldAccessor(Class kls, Keyword k) {
+//        for (Field f : kls.getFields()) {
+//            // kw->field selection logic intentionally dumb
+//            if (f.getName() == k.sym.name) {
+//                try {
+//                    return mhLookup.findGetter(kls, f.getName(), f.getType());
+//                } catch (NoSuchFieldException | IllegalAccessException e) {
+//                    throw new RuntimeException(e);
+//                }
+//            }
+//        }
+//        return null;
+//    }
+
     static MethodHandle fieldAccessor(Class kls, Keyword k) {
-        for (Field f : kls.getFields()) {
-            // kw->field selection logic intentionally dumb
-            if (f.getName() == k.sym.name) {
-                try {
-                    return mhLookup.findGetter(kls, f.getName(), f.getType());
-                } catch (NoSuchFieldException | IllegalAccessException e) {
-                    throw new RuntimeException(e);
-                }
-            }
+        try {
+            return mhLookup.unreflectGetter( kls.getField(k.sym.name));
+        } catch (IllegalAccessException | NoSuchFieldException e) {
+            return null;
         }
-        return null;
     }
 
     public static CallSite bootstrap(MethodHandles.Lookup lk, String instructionName, MethodType type, String kw) {
