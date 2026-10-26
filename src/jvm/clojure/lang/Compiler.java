@@ -20,6 +20,8 @@ import clojure.asm.commons.GeneratorAdapter;
 import clojure.asm.commons.Method;
 
 import java.io.*;
+import java.lang.invoke.CallSite;
+import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
@@ -3851,23 +3853,15 @@ static class KeywordInvokeExpr implements Expr{
 		gen.instanceOf(ObjExpr.IKEYWORD_LOOKUP_TYPE); //target, cmp
 		gen.ifZCmp(GeneratorAdapter.EQ, getLabel); //target
 
-		gen.getStatic(objx.objtype, objx.siteNameStatic(siteIndex),ObjExpr.KEYWORD_LOOKUPSITE_TYPE);  //target,site
-		gen.dupX1(); //site,target,site
-		gen.invokeVirtual(ObjExpr.KEYWORD_LOOKUPSITE_TYPE,ObjExpr.thunkMethod); //site, target, thunk
-		gen.dup2();  //site, target, thunk, target, thunk
-		gen.swap(); //site, target, thunk, thunk, target
-		gen.invokeInterface(ObjExpr.ILOOKUP_THUNK_TYPE, Method.getMethod("Object get(Object)")); //site,target,thunk,result
-		gen.dupX2();                          //site,result,target,thunk,result
-		gen.visitJumpInsn(IF_ACMPEQ, faultLabel); //site,result,target
-		gen.pop(); //site,result
-		gen.swap(); //result, site
-		gen.pop();  //result
-		gen.goTo(endLabel);
+	    MethodType bsmt = MethodType.methodType(CallSite.class,
+							   MethodHandles.Lookup.class, String.class, MethodType.class, String.class);
+	    Handle bsm = new Handle(Opcodes.H_INVOKESTATIC,
+							   "clojure/lang/KeywordLookupSite3",
+							   "bootstrap", bsmt.toMethodDescriptorString(),
+							   false);
 
-		gen.mark(faultLabel);    //site, result, target
-		gen.swap();              //site, target, result
-		gen.pop(); //site,target
-		gen.invokeVirtual(ObjExpr.KEYWORD_LOOKUPSITE_TYPE,ObjExpr.faultMethod); //result
+		gen.invokeDynamic("kl", "(Ljava/lang/Object;)Ljava/lang/Object;", bsm, kw.k.sym.name);
+
 		gen.goTo(endLabel);
 
 		gen.mark(getLabel);    //target
