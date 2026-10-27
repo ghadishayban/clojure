@@ -20,6 +20,8 @@ import clojure.asm.commons.GeneratorAdapter;
 import clojure.asm.commons.Method;
 
 import java.io.*;
+import java.lang.invoke.CallSite;
+import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
@@ -3839,7 +3841,38 @@ static class KeywordInvokeExpr implements Expr{
 			}
 	}
 
-	//*
+	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
+		Label endLabel = gen.newLabel();
+		Label getLabel = gen.newLabel();
+		Label faultLabel = gen.newLabel();
+
+		gen.visitLineNumber(line, gen.mark());
+		target.emit(C.EXPRESSION, objx, gen); //target
+		gen.dup(); //target, target
+		gen.instanceOf(ObjExpr.IKEYWORD_LOOKUP_TYPE); //target, cmp
+		gen.ifZCmp(GeneratorAdapter.EQ, getLabel); //target
+
+		MethodType bsmt = MethodType.methodType(CallSite.class,
+				MethodHandles.Lookup.class, String.class, MethodType.class, String.class);
+		Handle bsm = new Handle(Opcodes.H_INVOKESTATIC,
+				"clojure/lang/KeywordLookupSite3",
+				"bootstrap", bsmt.toMethodDescriptorString(),
+				false);
+		gen.invokeDynamic("kl", "(Ljava/lang/Object;)Ljava/lang/Object;", bsm, kw.k.sym.name);
+		gen.goTo(endLabel);
+
+		gen.mark(getLabel);    //target
+		kw.emit(C.EXPRESSION, objx, gen); //target, kw
+		gen.visitLineNumber(line, gen.mark());
+		gen.invokeStatic(RT_TYPE, Method.getMethod("Object get(Object,Object)")); //result
+
+		gen.mark(endLabel);
+
+		if(context == C.STATEMENT)
+			gen.pop();
+	}
+
+	/*
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
 		Label endLabel = gen.newLabel();
 		Label getLabel = gen.newLabel();
@@ -3879,7 +3912,7 @@ static class KeywordInvokeExpr implements Expr{
 		if(context == C.STATEMENT)
 			gen.pop();
 	}
-	//*/
+	*/
 
 	/*
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
