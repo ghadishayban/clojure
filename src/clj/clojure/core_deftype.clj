@@ -203,7 +203,7 @@
              (conj m `(meta [this#] ~'__meta)
                    `(withMeta [this# ~gs] (new ~tagname ~@(replace {'__meta gs} fields))))])
       (ilookup [[i m]] 
-         [(conj i 'clojure.lang.ILookup 'clojure.lang.IKeywordLookup 'clojure.lang.IFnThunkable)
+         [(conj i 'clojure.lang.ILookup 'clojure.lang.IKeywordLookup 'clojure.lang.IKeywordLookup2)
           (conj m `(valAt [this# k#] (.valAt this# k# nil))
                 `(valAt [this# k# else#] 
                    (case k# ~@(mapcat (fn [fld] [(keyword fld) fld]) 
@@ -223,7 +223,7 @@
                                                   ~'thunk)))])
                                 base-fields))
                            nil)))
-                `(getFnThunk [this# k#]
+                `(getLookupFn [this# k#]
                    (let [~'gclass (class this#)]
                      (case k#
                            ~@(let [hinted-target (with-meta 'gtarget {:tag tagname})]

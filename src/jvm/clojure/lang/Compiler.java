@@ -3844,12 +3844,11 @@ static class KeywordInvokeExpr implements Expr{
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen) {
 		Label endLabel = gen.newLabel();
 		Label getLabel = gen.newLabel();
-		Label faultLabel = gen.newLabel();
 
 		gen.visitLineNumber(line, gen.mark());
 		target.emit(C.EXPRESSION, objx, gen); //target
 		gen.dup(); //target, target
-		gen.instanceOf(ObjExpr.IKEYWORD_LOOKUP_TYPE); //target, cmp
+		gen.instanceOf(ObjExpr.IKEYWORD_LOOKUP2_TYPE); //target, cmp
 		gen.ifZCmp(GeneratorAdapter.EQ, getLabel); //target
 
 		MethodType bsmt = MethodType.methodType(CallSite.class,
@@ -3858,7 +3857,7 @@ static class KeywordInvokeExpr implements Expr{
 				"clojure/lang/KeywordLookupSite3",
 				"bootstrap", bsmt.toMethodDescriptorString(),
 				false);
-		gen.invokeDynamic("kl", "(Ljava/lang/Object;)Ljava/lang/Object;", bsm, kw.k.sym.name);
+		gen.invokeDynamic("kl", "(Lclojure/lang/IKeywordLookup2;)Ljava/lang/Object;", bsm, kw.k.sym.name);
 		gen.goTo(endLabel);
 
 		gen.mark(getLabel);    //target
@@ -4924,6 +4923,7 @@ static public class ObjExpr implements Expr{
 	final static Type ILOOKUP_SITE_TYPE = Type.getType(ILookupSite.class);
 	final static Type ILOOKUP_THUNK_TYPE = Type.getType(ILookupThunk.class);
 	final static Type IKEYWORD_LOOKUP_TYPE = Type.getType(IKeywordLookup.class);
+	final static Type IKEYWORD_LOOKUP2_TYPE = Type.getType(IKeywordLookup2.class);
 	final static Type KEYWORD_LOOKUPSITE_TYPE = Type.getType(KeywordLookupSite2.class);
 	final static Method thunkMethod = Method.getMethod("clojure.lang.ILookupThunk thunk()");
 	final static Method faultMethod = Method.getMethod("Object fault(clojure.lang.IKeywordLookup)");
